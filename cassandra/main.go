@@ -2,7 +2,8 @@ package main
 
 import (
 	"fmt"
-	"hello/gossip"
+
+	"github.com/adamgarcia4/goLearning/cassandra/gossip"
 )
 
 func main() {

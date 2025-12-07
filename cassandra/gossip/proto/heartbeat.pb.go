@@ -137,7 +137,7 @@ const file_gossip_proto_heartbeat_proto_rawDesc = "" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x1c\n" +
 	"\ttimestamp\x18\x02 \x01(\x03R\ttimestamp2R\n" +
 	"\x10HeartbeatService\x12>\n" +
-	"\tHeartbeat\x12\x17.proto.HeartbeatRequest\x1a\x18.proto.HeartbeatResponseB\x14Z\x12hello/gossip/protob\x06proto3"
+	"\tHeartbeat\x12\x17.proto.HeartbeatRequest\x1a\x18.proto.HeartbeatResponseB:Z8github.com/adamgarcia4/goLearning/cassandra/gossip/protob\x06proto3"
 
 var (
 	file_gossip_proto_heartbeat_proto_rawDescOnce sync.Once

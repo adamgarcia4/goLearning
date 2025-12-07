@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package proto;
 
-option go_package = "hello/gossip/proto";
+option go_package = "github.com/adamgarcia4/goLearning/cassandra/gossip/proto";
 
 service HeartbeatService {
     rpc Heartbeat (HeartbeatRequest) returns (HeartbeatResponse);

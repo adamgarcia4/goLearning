@@ -7,7 +7,7 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	pbproto "hello/gossip/proto"
+	pbproto "github.com/adamgarcia4/goLearning/cassandra/gossip/proto"
 )
 
 func Start() {
