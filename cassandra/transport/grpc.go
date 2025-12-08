@@ -1,24 +1,22 @@
 package transport
 
 import (
-	"context"
 	"fmt"
 	"net"
 	"strings"
-	"time"
 
-	gossipProtobuffer "github.com/adamgarcia4/goLearning/cassandra/api/gossip/v1" // Import to register proto file descriptors for reflection
+	gossipProtobuffer "github.com/adamgarcia4/goLearning/cassandra/api/gossip/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 )
 
 type GRPC struct {
-	addr   string
-	srv    *grpc.Server
-	lis    net.Listener
-	nodeID string
+	addr          string
+	srv           *grpc.Server
+	lis           net.Listener
+	nodeID        string
+	gossipHandler GossipHandler
 	// logger *log.Logger
-	// eng    *node.GossipEngine
 }
 
 func (g *GRPC) setupTcp() (net.Listener, error) {
@@ -31,25 +29,14 @@ func (g *GRPC) setupTcp() (net.Listener, error) {
 	return lis, nil
 }
 
-// HeartbeatServiceServer implements the gRPC HeartbeatService
-type HeartbeatServiceServer struct {
-	gossipProtobuffer.UnimplementedHeartbeatServiceServer
-	nodeID string
-}
+func (g *GRPC) setupServices() error {
+	if g.gossipHandler == nil {
+		return fmt.Errorf("gossip handler must be set")
+	}
 
-// Heartbeat handles heartbeat requests
-func (s *HeartbeatServiceServer) Heartbeat(ctx context.Context, req *gossipProtobuffer.HeartbeatRequest) (*gossipProtobuffer.HeartbeatResponse, error) {
-	// TODO: Integrate with gossip engine to merge state
-	// For now, just return a response with our node ID and current timestamp
-	return &gossipProtobuffer.HeartbeatResponse{
-		NodeId:    s.nodeID,
-		Timestamp: time.Now().Unix(),
-	}, nil
-}
-
-func (g *GRPC) setupServices(nodeID string) error {
 	heartbeatServer := &HeartbeatServiceServer{
-		nodeID: nodeID,
+		handler: g.gossipHandler,
+		nodeID:  g.nodeID,
 	}
 	gossipProtobuffer.RegisterHeartbeatServiceServer(g.srv, heartbeatServer)
 	return nil
@@ -63,7 +50,7 @@ func (g *GRPC) Start() error {
 	}
 
 	// Register services
-	if err := g.setupServices(g.nodeID); err != nil {
+	if err := g.setupServices(); err != nil {
 		return fmt.Errorf("failed to setup services: %w", err)
 	}
 
@@ -74,7 +61,7 @@ func (g *GRPC) Start() error {
 	return g.srv.Serve(g.lis)
 }
 
-func NewGRPC(addr string, nodeID string) (*GRPC, error) {
+func NewGRPC(addr string, nodeID string, gossipHandler GossipHandler) (*GRPC, error) {
 	if addr == "" || !strings.Contains(addr, ":") {
 		return nil, fmt.Errorf("invalid address: %s", addr)
 	}
@@ -83,9 +70,14 @@ func NewGRPC(addr string, nodeID string) (*GRPC, error) {
 		return nil, fmt.Errorf("nodeID must be provided")
 	}
 
+	if gossipHandler == nil {
+		return nil, fmt.Errorf("gossip handler must be provided")
+	}
+
 	return &GRPC{
-		addr:   addr,
-		srv:    grpc.NewServer(),
-		nodeID: nodeID,
+		addr:          addr,
+		srv:           grpc.NewServer(),
+		nodeID:        nodeID,
+		gossipHandler: gossipHandler,
 	}, nil
 }

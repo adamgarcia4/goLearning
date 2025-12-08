@@ -64,6 +64,26 @@ func (g *GossipState) LocalHeartbeat() HeartbeatState {
 	return hb
 }
 
+// HandleHeartbeat processes an incoming heartbeat from a remote node
+// It merges the remote state and returns the local node's heartbeat state
+func (g *GossipState) HandleHeartbeat(remoteNodeID string, remoteGeneration int64, remoteVersion int64) (localNodeID string, localGeneration int64, localVersion int64, err error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	// TODO: Implement proper state merging logic
+	// For now, just return our local state
+	// In the future, this should:
+	// 1. Compare remote generation/version with local state
+	// 2. Merge remote state into StateByNode map
+	// 3. Update local state if remote is newer
+
+	localNodeID = string(g.myHeartbeatState.NodeID)
+	localGeneration = g.myHeartbeatState.Generation
+	localVersion = g.myHeartbeatState.Version
+
+	return localNodeID, localGeneration, localVersion, nil
+}
+
 func (g *GossipState) Start(ctx context.Context, sendHeartbeat HeartbeatSender) {
 	go g.InitializeHeartbeatSending(ctx, sendHeartbeat)
 }

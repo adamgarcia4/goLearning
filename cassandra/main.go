@@ -70,7 +70,14 @@ func main() {
 		log.Printf("Client mode enabled: sending heartbeats to %s every 5 seconds\n", args.targetServer)
 	}
 
-	grpcTransport, err := transport.NewGRPC(args.address+":"+args.port, string(args.nodeID))
+	// Create gossip state for server-side heartbeat handling
+	gossipState, err := gossip.NewGossipState(gossip.NodeID(args.nodeID), 5*time.Second)
+	if err != nil {
+		log.Fatalf("failed to create gossip state: %v", err)
+	}
+
+	// Create gRPC transport with gossip handler
+	grpcTransport, err := transport.NewGRPC(args.address+":"+args.port, string(args.nodeID), gossipState)
 	if err != nil {
 		log.Fatalf("failed to create gRPC: %v", err)
 	}
@@ -79,6 +86,5 @@ func main() {
 	if err := grpcTransport.Start(); err != nil {
 		log.Fatalf("failed to start gRPC server: %v", err)
 	}
-	// handleGrpcServer(args)
 
 }
