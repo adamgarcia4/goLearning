@@ -11,7 +11,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/reflection"
 
-	pbproto "github.com/adamgarcia4/goLearning/cassandra/gossip/proto"
+	pbproto "github.com/adamgarcia4/goLearning/cassandra/api/gossip/v1"
 )
 
 // Server implements the HeartbeatServiceServer interface

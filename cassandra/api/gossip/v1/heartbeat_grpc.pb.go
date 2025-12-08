@@ -2,9 +2,9 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.0
 // - protoc             v6.33.1
-// source: gossip/proto/heartbeat.proto
+// source: api/gossip/v1/heartbeat.proto
 
-package proto
+package v1
 
 import (
 	context "context"
@@ -19,7 +19,7 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	HeartbeatService_Heartbeat_FullMethodName = "/proto.HeartbeatService/Heartbeat"
+	HeartbeatService_Heartbeat_FullMethodName = "/github.adamgarcia4.golearning.cassandra.gossip.v1.HeartbeatService/Heartbeat"
 )
 
 // HeartbeatServiceClient is the client API for HeartbeatService service.
@@ -108,7 +108,7 @@ func _HeartbeatService_Heartbeat_Handler(srv interface{}, ctx context.Context, d
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var HeartbeatService_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "proto.HeartbeatService",
+	ServiceName: "github.adamgarcia4.golearning.cassandra.gossip.v1.HeartbeatService",
 	HandlerType: (*HeartbeatServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
@@ -117,5 +117,5 @@ var HeartbeatService_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "gossip/proto/heartbeat.proto",
+	Metadata: "api/gossip/v1/heartbeat.proto",
 }

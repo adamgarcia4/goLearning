@@ -1,8 +1,8 @@
 syntax = "proto3";
 
-package proto;
+package github.adamgarcia4.golearning.cassandra.gossip.v1;
 
-option go_package = "github.com/adamgarcia4/goLearning/cassandra/gossip/proto";
+option go_package = "github.com/adamgarcia4/goLearning/cassandra/api/gossip/v1";
 
 service HeartbeatService {
     rpc Heartbeat (HeartbeatRequest) returns (HeartbeatResponse);
@@ -17,3 +17,4 @@ message HeartbeatResponse {
     string node_id = 1;
     int64 timestamp = 2;
 }
+
