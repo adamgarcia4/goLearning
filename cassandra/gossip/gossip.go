@@ -14,7 +14,17 @@ import (
 	pbproto "github.com/adamgarcia4/goLearning/cassandra/api/gossip/v1"
 )
 
-// Server implements the HeartbeatServiceServer interface
+/**
+My Application State needs to answer 3 questions:
+1. Who are the nodes? (membership list)
+2. Are they alive? (Liveness)
+3. How do I contact them? (Addressability)
+
+Discovery: GossipState.StateByNode
+Liveness: GossipState.StateByNode.Heartbeat.Generation
+Addressability: GossipState.StateByNode.AppStates[AppHeartbeat].Value
+*/
+
 type Server struct {
 	pbproto.UnimplementedHeartbeatServiceServer
 	nodeID string
@@ -33,6 +43,10 @@ func (s *Server) Heartbeat(ctx context.Context, req *pbproto.HeartbeatRequest) (
 		NodeId:    s.nodeID,
 		Timestamp: time.Now().Unix(),
 	}, nil
+}
+
+type GossipState struct {
+	StateByNode map[NodeID]*EndpointState
 }
 
 // StartClient starts a client that sends heartbeats to the target server
