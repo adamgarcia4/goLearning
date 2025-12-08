@@ -10,8 +10,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/reflection"
 
-	_ "github.com/adamgarcia4/goLearning/cassandra/api/gossip/v1" // Import to register proto file descriptors for reflection
-	pbproto "github.com/adamgarcia4/goLearning/cassandra/api/gossip/v1"
+	pbproto "github.com/adamgarcia4/goLearning/cassandra/api/gossip/v1" // Import to register proto file descriptors for reflection
 	"github.com/adamgarcia4/goLearning/cassandra/gossip"
 )
 
@@ -60,10 +59,10 @@ func main() {
 			ctx := context.Background()
 
 			// Create heartbeat sender function that uses gRPC client
-			sendHeartbeat := func(nodeID string, timestamp int64) (string, int64, error) {
+			sendHeartbeat := func(heartbeatState gossip.HeartbeatState) (string, int64, error) {
 				req := &pbproto.HeartbeatRequest{
-					NodeId:    nodeID,
-					Timestamp: timestamp,
+					NodeId:    string(heartbeatState.NodeID),
+					Timestamp: heartbeatState.Generation, // Using Generation as timestamp for now
 				}
 
 				resp, err := client.Heartbeat(ctx, req)
@@ -74,9 +73,11 @@ func main() {
 				return resp.NodeId, resp.Timestamp, nil
 			}
 
-			if _, err := gossip.StartClient(args.nodeID, 5*time.Second, sendHeartbeat); err != nil {
-				log.Fatalf("client error: %v", err)
+			gossipState, err := gossip.NewGossipState(gossip.NodeID(args.nodeID), 5*time.Second)
+			if err != nil {
+				log.Fatalf("failed to create gossip state: %v", err)
 			}
+			gossipState.Start(ctx, sendHeartbeat)
 		}()
 		log.Printf("Client mode enabled: sending heartbeats to %s every 5 seconds\n", args.targetServer)
 	}

@@ -23,7 +23,7 @@ func getCliArgs() (*Config, error) {
 	return &Config{
 		address:      *address,
 		port:         *port,
-		nodeID:       *nodeID,
+		nodeID:       NodeID(*nodeID),
 		clientMode:   *clientMode,
 		targetServer: *targetServer,
 	}, nil

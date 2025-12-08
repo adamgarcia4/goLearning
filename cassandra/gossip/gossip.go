@@ -1,7 +1,10 @@
 package gossip
 
 import (
+	"context"
+	"fmt"
 	"log"
+	"sync"
 	"time"
 )
 
@@ -17,6 +20,8 @@ Addressability: GossipState.StateByNode.AppStates[AppHeartbeat].Value
 */
 
 type GossipState struct {
+	nodeID            NodeID
+	mu                sync.RWMutex
 	heartbeatInterval time.Duration
 	myHeartbeatState  HeartbeatState
 
@@ -26,46 +31,59 @@ type GossipState struct {
 // HeartbeatSender is a function that sends a heartbeat and returns the response node ID and timestamp
 type HeartbeatSender func(heartbeatState HeartbeatState) (string, int64, error)
 
-func (g *GossipState) SendHeartbeat(sendHeartbeat HeartbeatSender) (err error) {
+func (g *GossipState) SendHeartbeat(sendHeartbeat HeartbeatSender) (string, int64, error) {
+	g.mu.Lock()
 	g.myHeartbeatState.Version++
-
-	responseNodeID, responseTimestamp, err := sendHeartbeat(g.myHeartbeatState)
-	if err != nil {
-		return err
-	}
-
-	log.Printf("Node %s: Sent heartbeat, received response from %s (timestamp: %d)\n",
-		g.myHeartbeatState.NodeID, responseNodeID, responseTimestamp)
-
-	return nil
+	heartbeatState := g.myHeartbeatState
+	g.mu.Unlock()
+	return sendHeartbeat(heartbeatState)
 }
 
-func (g *GossipState) InitializeHeartbeatSending(sendHeartbeat HeartbeatSender) {
+func (g *GossipState) InitializeHeartbeatSending(ctx context.Context, sendHeartbeat HeartbeatSender) {
 	ticker := time.NewTicker(g.heartbeatInterval)
 	defer ticker.Stop()
-	log.Printf("Node %s: Starting to send heartbeats every %v\n", g.myHeartbeatState.NodeID, g.heartbeatInterval)
+	log.Printf("Node %s: Starting to send heartbeats every %v\n", g.nodeID, g.heartbeatInterval)
 
-	for range ticker.C {
-		err := g.SendHeartbeat(sendHeartbeat)
-		if err != nil {
-			log.Printf("Node %s: Failed to send heartbeat: %v\n", g.myHeartbeatState.NodeID, err)
-			continue
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			_, _, err := g.SendHeartbeat(sendHeartbeat)
+			if err != nil {
+				log.Printf("Node %s: Failed to send heartbeat: %v\n", g.nodeID, err)
+			}
 		}
 	}
 }
 
-// StartClient starts a ticker that sends heartbeats using the provided sender function
-func StartClient(nodeID NodeID, interval time.Duration, sendHeartbeat HeartbeatSender) (*GossipState, error) {
-	gossipState := GossipState{
+func (g *GossipState) LocalHeartbeat() HeartbeatState {
+	g.mu.RLock()
+	hb := g.myHeartbeatState
+	g.mu.RUnlock()
+	return hb
+}
+
+func (g *GossipState) Start(ctx context.Context, sendHeartbeat HeartbeatSender) {
+	go g.InitializeHeartbeatSending(ctx, sendHeartbeat)
+}
+
+func NewGossipState(nodeID NodeID, interval time.Duration) (*GossipState, error) {
+	if interval <= 0 {
+		return nil, fmt.Errorf("interval must be greater than 0")
+	}
+
+	if nodeID == "" {
+		return nil, fmt.Errorf("nodeID must be set")
+	}
+
+	return &GossipState{
+		nodeID:            nodeID,
 		heartbeatInterval: interval,
 		myHeartbeatState: HeartbeatState{
 			NodeID:     nodeID,
 			Generation: time.Now().Unix(),
 			Version:    0,
 		},
-	}
-
-	go gossipState.InitializeHeartbeatSending(sendHeartbeat)
-
-	return &gossipState, nil
+	}, nil
 }
