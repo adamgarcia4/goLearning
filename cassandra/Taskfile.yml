@@ -17,9 +17,10 @@ tasks:
   init:
     deps:
       - startA
-      - startB
+      # - startB
+  kill:
     cmds:
-      - go mod tidy
+      - lsof -t -i:50051 -i:50052 | xargs kill -9
   default:
     cmds:
       - echo "{{.GREETING}}"
