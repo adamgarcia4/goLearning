@@ -16,8 +16,8 @@ tasks:
       - go run . --port=50052 --node-id=node-2 --client --target=127.0.0.1:50051
   init:
     deps:
-      - startA
-      # - startB
+      # - startA
+      - startB
   kill:
     cmds:
       - lsof -t -i:50051 -i:50052 | xargs kill -9

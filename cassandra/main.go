@@ -3,40 +3,15 @@ package main
 import (
 	"context"
 	"log"
-	"net"
 	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/reflection"
 
-	pbproto "github.com/adamgarcia4/goLearning/cassandra/api/gossip/v1" // Import to register proto file descriptors for reflection
+	pbproto "github.com/adamgarcia4/goLearning/cassandra/api/gossip/v1"
 	"github.com/adamgarcia4/goLearning/cassandra/gossip"
+	"github.com/adamgarcia4/goLearning/cassandra/transport"
 )
-
-func handleGrpcServer(args *Config) {
-	lis, err := net.Listen("tcp", args.address+":"+args.port)
-	if err != nil {
-		log.Fatalf("failed to listen: %v", err)
-	}
-	defer lis.Close()
-
-	// Create gRPC server
-	grpcServer := grpc.NewServer()
-
-	// Register gossip services (TODO: move to transport layer)
-	// gossip.RegisterServices(grpcServer, args.nodeID)
-
-	// Register reflection service for gRPC tools (grpcurl, grpcui, etc.)
-	reflection.Register(grpcServer)
-
-	log.Printf("gRPC server listening on %s (node-id: %s)\n", lis.Addr(), args.address+":"+args.port)
-
-	// Start serving
-	if err := grpcServer.Serve(lis); err != nil {
-		log.Fatalf("failed to serve: %v", err)
-	}
-}
 
 func main() {
 	args, err := getCliArgs()
@@ -78,9 +53,32 @@ func main() {
 				log.Fatalf("failed to create gossip state: %v", err)
 			}
 			gossipState.Start(ctx, sendHeartbeat)
+
+			// go func() {
+			// 	for {
+			// 		select {
+			// 		case <-ctx.Done():
+			// 			return
+			// 		default:
+			// 			currentHeartbeatState := gossipState.LocalHeartbeat()
+			// 			log.Printf("Node %s: Current heartbeat state: %+v\n", args.nodeID, currentHeartbeatState)
+			// 			time.Sleep(5 * time.Second)
+			// 		}
+			// 	}
+			// }()
 		}()
 		log.Printf("Client mode enabled: sending heartbeats to %s every 5 seconds\n", args.targetServer)
 	}
 
-	handleGrpcServer(args)
+	grpcTransport, err := transport.NewGRPC(args.address+":"+args.port, string(args.nodeID))
+	if err != nil {
+		log.Fatalf("failed to create gRPC: %v", err)
+	}
+
+	log.Printf("gRPC server starting on %s (node-id: %s)\n", args.address+":"+args.port, args.nodeID)
+	if err := grpcTransport.Start(); err != nil {
+		log.Fatalf("failed to start gRPC server: %v", err)
+	}
+	// handleGrpcServer(args)
+
 }
