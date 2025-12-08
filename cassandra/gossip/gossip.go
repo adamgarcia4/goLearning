@@ -1,15 +1,8 @@
 package gossip
 
 import (
-	"context"
-	"fmt"
 	"log"
 	"time"
-
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
-
-	pbproto "github.com/adamgarcia4/goLearning/cassandra/api/gossip/v1"
 )
 
 /**
@@ -23,68 +16,56 @@ Liveness: GossipState.StateByNode.Heartbeat.Generation
 Addressability: GossipState.StateByNode.AppStates[AppHeartbeat].Value
 */
 
-type Server struct {
-	pbproto.UnimplementedHeartbeatServiceServer
-	nodeID string
-}
-
-// NewServer creates a new HeartbeatService server
-func NewServer(nodeID string) *Server {
-	return &Server{
-		nodeID: nodeID,
-	}
-}
-
-// Heartbeat handles heartbeat requests
-func (s *Server) Heartbeat(ctx context.Context, req *pbproto.HeartbeatRequest) (*pbproto.HeartbeatResponse, error) {
-	return &pbproto.HeartbeatResponse{
-		NodeId:    s.nodeID,
-		Timestamp: time.Now().Unix(),
-	}, nil
-}
-
 type GossipState struct {
-	StateByNode map[NodeID]*EndpointState
+	heartbeatInterval time.Duration
+	myHeartbeatState  HeartbeatState
+
+	// StateByNode map[NodeID]*EndpointState
 }
 
-// StartClient starts a client that sends heartbeats to the target server
-func StartClient(nodeID, targetAddress string, interval time.Duration) error {
-	// Connect to the target server
-	conn, err := grpc.NewClient(targetAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
+// HeartbeatSender is a function that sends a heartbeat and returns the response node ID and timestamp
+type HeartbeatSender func(heartbeatState HeartbeatState) (string, int64, error)
+
+func (g *GossipState) SendHeartbeat(sendHeartbeat HeartbeatSender) (err error) {
+	g.myHeartbeatState.Version++
+
+	responseNodeID, responseTimestamp, err := sendHeartbeat(g.myHeartbeatState)
 	if err != nil {
-		return fmt.Errorf("failed to connect: %v", err)
+		return err
 	}
-	defer conn.Close()
 
-	client := pbproto.NewHeartbeatServiceClient(conn)
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
+	log.Printf("Node %s: Sent heartbeat, received response from %s (timestamp: %d)\n",
+		g.myHeartbeatState.NodeID, responseNodeID, responseTimestamp)
 
-	log.Printf("Node %s: Starting to send heartbeats to %s every %v\n", nodeID, targetAddress, interval)
-
-	ctx := context.Background()
-	for range ticker.C {
-		req := &pbproto.HeartbeatRequest{
-			NodeId:    nodeID,
-			Timestamp: time.Now().Unix(),
-		}
-
-		resp, err := client.Heartbeat(ctx, req)
-		if err != nil {
-			log.Printf("Node %s: Failed to send heartbeat: %v\n", nodeID, err)
-			continue
-		}
-
-		log.Printf("Node %s: Sent heartbeat to %s, received response from %s (timestamp: %d)\n",
-			nodeID, targetAddress, resp.NodeId, resp.Timestamp)
-	}
-	// Unreachable, but required for function signature
 	return nil
 }
 
-// RegisterServices registers all gossip services on the provided gRPC server
-func RegisterServices(grpcServer *grpc.Server, nodeID string) *Server {
-	heartbeatServer := NewServer(nodeID)
-	pbproto.RegisterHeartbeatServiceServer(grpcServer, heartbeatServer)
-	return heartbeatServer
+func (g *GossipState) InitializeHeartbeatSending(sendHeartbeat HeartbeatSender) {
+	ticker := time.NewTicker(g.heartbeatInterval)
+	defer ticker.Stop()
+	log.Printf("Node %s: Starting to send heartbeats every %v\n", g.myHeartbeatState.NodeID, g.heartbeatInterval)
+
+	for range ticker.C {
+		err := g.SendHeartbeat(sendHeartbeat)
+		if err != nil {
+			log.Printf("Node %s: Failed to send heartbeat: %v\n", g.myHeartbeatState.NodeID, err)
+			continue
+		}
+	}
+}
+
+// StartClient starts a ticker that sends heartbeats using the provided sender function
+func StartClient(nodeID NodeID, interval time.Duration, sendHeartbeat HeartbeatSender) (*GossipState, error) {
+	gossipState := GossipState{
+		heartbeatInterval: interval,
+		myHeartbeatState: HeartbeatState{
+			NodeID:     nodeID,
+			Generation: time.Now().Unix(),
+			Version:    0,
+		},
+	}
+
+	go gossipState.InitializeHeartbeatSending(sendHeartbeat)
+
+	return &gossipState, nil
 }

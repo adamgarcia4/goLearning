@@ -2,10 +2,12 @@ package main
 
 import "flag"
 
+type NodeID string
+
 type Config struct {
 	address      string
 	port         string
-	nodeID       string
+	nodeID       NodeID
 	clientMode   bool
 	targetServer string
 }
