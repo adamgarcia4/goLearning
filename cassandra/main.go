@@ -2,15 +2,10 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"log"
-	"net"
 	"time"
 
 	"github.com/adamgarcia4/goLearning/cassandra/gossip"
-	"github.com/adamgarcia4/goLearning/cassandra/gossip/proto"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/reflection"
 )
 
 type Config struct {
@@ -38,52 +33,24 @@ func getCliArgs() (*Config, error) {
 	}, nil
 }
 
-func listen(address string, port string) (net.Listener, error) {
-	lis, err := net.Listen("tcp", address+":"+port)
-	if err != nil {
-		panic(err)
-	}
-
-	return lis, nil
-}
-
 func main() {
 	args, err := getCliArgs()
-
-	log.Println("args", args)
 	if err != nil {
 		log.Fatalf("error getting cli args: %v", err)
 	}
 
-	// Run as client if client mode is enabled
+	// Start client in a goroutine if client mode is enabled
 	if args.clientMode {
-		if err := gossip.StartClient(args.nodeID, args.targetServer, 5*time.Second); err != nil {
-			log.Fatalf("client error: %v", err)
-		}
-		return
+		go func() {
+			if err := gossip.StartClient(args.nodeID, args.targetServer, 5*time.Second); err != nil {
+				log.Fatalf("client error: %v", err)
+			}
+		}()
+		log.Printf("Client mode enabled: sending heartbeats to %s every 5 seconds\n", args.targetServer)
 	}
 
-	// Run as server
-	lis, err := listen(args.address, args.port)
-	if err != nil {
-		log.Fatalf("failed to listen: %v", err)
-	}
-	defer lis.Close()
-
-	// Create gRPC server
-	grpcServer := grpc.NewServer()
-
-	// Create and register HeartbeatService
-	heartbeatServer := gossip.NewServer(args.nodeID)
-	proto.RegisterHeartbeatServiceServer(grpcServer, heartbeatServer)
-
-	// Register reflection service for gRPC tools (grpcurl, grpcui, etc.)
-	reflection.Register(grpcServer)
-
-	fmt.Printf("gRPC server listening on %s (node-id: %s)\n", lis.Addr(), args.nodeID)
-
-	// Start serving
-	if err := grpcServer.Serve(lis); err != nil {
-		log.Fatalf("failed to serve: %v", err)
+	// Start gRPC server
+	if err := gossip.StartServer(args.nodeID, args.address, args.port); err != nil {
+		log.Fatalf("server error: %v", err)
 	}
 }

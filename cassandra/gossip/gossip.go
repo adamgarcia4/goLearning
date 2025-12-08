@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
 	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/reflection"
 
 	pbproto "github.com/adamgarcia4/goLearning/cassandra/gossip/proto"
 )
@@ -63,6 +65,34 @@ func StartClient(nodeID, targetAddress string, interval time.Duration) error {
 
 		log.Printf("Node %s: Sent heartbeat to %s, received response from %s (timestamp: %d)\n",
 			nodeID, targetAddress, resp.NodeId, resp.Timestamp)
+	}
+	// Unreachable, but required for function signature
+	return nil
+}
+
+// StartServer starts a gRPC server with the HeartbeatService
+func StartServer(nodeID, address, port string) error {
+	lis, err := net.Listen("tcp", address+":"+port)
+	if err != nil {
+		return fmt.Errorf("failed to listen: %v", err)
+	}
+	defer lis.Close()
+
+	// Create gRPC server
+	grpcServer := grpc.NewServer()
+
+	// Create and register HeartbeatService
+	heartbeatServer := NewServer(nodeID)
+	pbproto.RegisterHeartbeatServiceServer(grpcServer, heartbeatServer)
+
+	// Register reflection service for gRPC tools (grpcurl, grpcui, etc.)
+	reflection.Register(grpcServer)
+
+	log.Printf("gRPC server listening on %s (node-id: %s)\n", lis.Addr(), nodeID)
+
+	// Start serving
+	if err := grpcServer.Serve(lis); err != nil {
+		return fmt.Errorf("failed to serve: %v", err)
 	}
 	// Unreachable, but required for function signature
 	return nil
