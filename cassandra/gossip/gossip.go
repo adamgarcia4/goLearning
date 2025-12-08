@@ -1,34 +1,69 @@
 package gossip
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"time"
 
-	"google.golang.org/protobuf/proto"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 
 	pbproto "github.com/adamgarcia4/goLearning/cassandra/gossip/proto"
 )
 
-func Start() {
-	fmt.Println("Gossipping")
+// Server implements the HeartbeatServiceServer interface
+type Server struct {
+	pbproto.UnimplementedHeartbeatServiceServer
+	nodeID string
+}
 
-	test := pbproto.HeartbeatRequest{
-		NodeId:    "1",
+// NewServer creates a new HeartbeatService server
+func NewServer(nodeID string) *Server {
+	return &Server{
+		nodeID: nodeID,
+	}
+}
+
+// Heartbeat handles heartbeat requests
+func (s *Server) Heartbeat(ctx context.Context, req *pbproto.HeartbeatRequest) (*pbproto.HeartbeatResponse, error) {
+	return &pbproto.HeartbeatResponse{
+		NodeId:    s.nodeID,
 		Timestamp: time.Now().Unix(),
-	}
+	}, nil
+}
 
-	bytes, err := proto.Marshal(&test)
+// StartClient starts a client that sends heartbeats to the target server
+func StartClient(nodeID, targetAddress string, interval time.Duration) error {
+	// Connect to the target server
+	conn, err := grpc.NewClient(targetAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		log.Fatalf("marshal error: %v", err)
+		return fmt.Errorf("failed to connect: %v", err)
 	}
+	defer conn.Close()
 
-	fmt.Printf("Bytes: %x\n", bytes)
+	client := pbproto.NewHeartbeatServiceClient(conn)
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
 
-	var test2 pbproto.HeartbeatRequest
-	if err := proto.Unmarshal(bytes, &test2); err != nil {
-		log.Fatalf("unmarshal error: %v", err)
+	log.Printf("Node %s: Starting to send heartbeats to %s every %v\n", nodeID, targetAddress, interval)
+
+	ctx := context.Background()
+	for range ticker.C {
+		req := &pbproto.HeartbeatRequest{
+			NodeId:    nodeID,
+			Timestamp: time.Now().Unix(),
+		}
+
+		resp, err := client.Heartbeat(ctx, req)
+		if err != nil {
+			log.Printf("Node %s: Failed to send heartbeat: %v\n", nodeID, err)
+			continue
+		}
+
+		log.Printf("Node %s: Sent heartbeat to %s, received response from %s (timestamp: %d)\n",
+			nodeID, targetAddress, resp.NodeId, resp.Timestamp)
 	}
-
-	fmt.Printf("Test2: %+v\n", &test2)
+	// Unreachable, but required for function signature
+	return nil
 }

@@ -1,0 +1,8 @@
+cluster: "my-cluster"
+
+listen_addr: "127.0.0.1"
+
+seeds:
+  - "127.0.0.1:50051"
+
+log_level: "info"
