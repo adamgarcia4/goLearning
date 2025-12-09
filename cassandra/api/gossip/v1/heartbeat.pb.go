@@ -2,9 +2,9 @@
 // versions:
 // 	protoc-gen-go v1.36.10
 // 	protoc        v6.33.1
-// source: gossip/proto/heartbeat.proto
+// source: api/gossip/v1/heartbeat.proto
 
-package proto
+package v1
 
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
@@ -31,7 +31,7 @@ type HeartbeatRequest struct {
 
 func (x *HeartbeatRequest) Reset() {
 	*x = HeartbeatRequest{}
-	mi := &file_gossip_proto_heartbeat_proto_msgTypes[0]
+	mi := &file_api_gossip_v1_heartbeat_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -43,7 +43,7 @@ func (x *HeartbeatRequest) String() string {
 func (*HeartbeatRequest) ProtoMessage() {}
 
 func (x *HeartbeatRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_gossip_proto_heartbeat_proto_msgTypes[0]
+	mi := &file_api_gossip_v1_heartbeat_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -56,7 +56,7 @@ func (x *HeartbeatRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HeartbeatRequest.ProtoReflect.Descriptor instead.
 func (*HeartbeatRequest) Descriptor() ([]byte, []int) {
-	return file_gossip_proto_heartbeat_proto_rawDescGZIP(), []int{0}
+	return file_api_gossip_v1_heartbeat_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *HeartbeatRequest) GetNodeId() string {
@@ -83,7 +83,7 @@ type HeartbeatResponse struct {
 
 func (x *HeartbeatResponse) Reset() {
 	*x = HeartbeatResponse{}
-	mi := &file_gossip_proto_heartbeat_proto_msgTypes[1]
+	mi := &file_api_gossip_v1_heartbeat_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -95,7 +95,7 @@ func (x *HeartbeatResponse) String() string {
 func (*HeartbeatResponse) ProtoMessage() {}
 
 func (x *HeartbeatResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_gossip_proto_heartbeat_proto_msgTypes[1]
+	mi := &file_api_gossip_v1_heartbeat_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -108,7 +108,7 @@ func (x *HeartbeatResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HeartbeatResponse.ProtoReflect.Descriptor instead.
 func (*HeartbeatResponse) Descriptor() ([]byte, []int) {
-	return file_gossip_proto_heartbeat_proto_rawDescGZIP(), []int{1}
+	return file_api_gossip_v1_heartbeat_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *HeartbeatResponse) GetNodeId() string {
@@ -125,40 +125,40 @@ func (x *HeartbeatResponse) GetTimestamp() int64 {
 	return 0
 }
 
-var File_gossip_proto_heartbeat_proto protoreflect.FileDescriptor
+var File_api_gossip_v1_heartbeat_proto protoreflect.FileDescriptor
 
-const file_gossip_proto_heartbeat_proto_rawDesc = "" +
+const file_api_gossip_v1_heartbeat_proto_rawDesc = "" +
 	"\n" +
-	"\x1cgossip/proto/heartbeat.proto\x12\x05proto\"I\n" +
+	"\x1dapi/gossip/v1/heartbeat.proto\x121github.adamgarcia4.golearning.cassandra.gossip.v1\"I\n" +
 	"\x10HeartbeatRequest\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x1c\n" +
 	"\ttimestamp\x18\x02 \x01(\x03R\ttimestamp\"J\n" +
 	"\x11HeartbeatResponse\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x1c\n" +
-	"\ttimestamp\x18\x02 \x01(\x03R\ttimestamp2R\n" +
-	"\x10HeartbeatService\x12>\n" +
-	"\tHeartbeat\x12\x17.proto.HeartbeatRequest\x1a\x18.proto.HeartbeatResponseB:Z8github.com/adamgarcia4/goLearning/cassandra/gossip/protob\x06proto3"
+	"\ttimestamp\x18\x02 \x01(\x03R\ttimestamp2\xab\x01\n" +
+	"\x10HeartbeatService\x12\x96\x01\n" +
+	"\tHeartbeat\x12C.github.adamgarcia4.golearning.cassandra.gossip.v1.HeartbeatRequest\x1aD.github.adamgarcia4.golearning.cassandra.gossip.v1.HeartbeatResponseB;Z9github.com/adamgarcia4/goLearning/cassandra/api/gossip/v1b\x06proto3"
 
 var (
-	file_gossip_proto_heartbeat_proto_rawDescOnce sync.Once
-	file_gossip_proto_heartbeat_proto_rawDescData []byte
+	file_api_gossip_v1_heartbeat_proto_rawDescOnce sync.Once
+	file_api_gossip_v1_heartbeat_proto_rawDescData []byte
 )
 
-func file_gossip_proto_heartbeat_proto_rawDescGZIP() []byte {
-	file_gossip_proto_heartbeat_proto_rawDescOnce.Do(func() {
-		file_gossip_proto_heartbeat_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_gossip_proto_heartbeat_proto_rawDesc), len(file_gossip_proto_heartbeat_proto_rawDesc)))
+func file_api_gossip_v1_heartbeat_proto_rawDescGZIP() []byte {
+	file_api_gossip_v1_heartbeat_proto_rawDescOnce.Do(func() {
+		file_api_gossip_v1_heartbeat_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_api_gossip_v1_heartbeat_proto_rawDesc), len(file_api_gossip_v1_heartbeat_proto_rawDesc)))
 	})
-	return file_gossip_proto_heartbeat_proto_rawDescData
+	return file_api_gossip_v1_heartbeat_proto_rawDescData
 }
 
-var file_gossip_proto_heartbeat_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
-var file_gossip_proto_heartbeat_proto_goTypes = []any{
-	(*HeartbeatRequest)(nil),  // 0: proto.HeartbeatRequest
-	(*HeartbeatResponse)(nil), // 1: proto.HeartbeatResponse
+var file_api_gossip_v1_heartbeat_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_api_gossip_v1_heartbeat_proto_goTypes = []any{
+	(*HeartbeatRequest)(nil),  // 0: github.adamgarcia4.golearning.cassandra.gossip.v1.HeartbeatRequest
+	(*HeartbeatResponse)(nil), // 1: github.adamgarcia4.golearning.cassandra.gossip.v1.HeartbeatResponse
 }
-var file_gossip_proto_heartbeat_proto_depIdxs = []int32{
-	0, // 0: proto.HeartbeatService.Heartbeat:input_type -> proto.HeartbeatRequest
-	1, // 1: proto.HeartbeatService.Heartbeat:output_type -> proto.HeartbeatResponse
+var file_api_gossip_v1_heartbeat_proto_depIdxs = []int32{
+	0, // 0: github.adamgarcia4.golearning.cassandra.gossip.v1.HeartbeatService.Heartbeat:input_type -> github.adamgarcia4.golearning.cassandra.gossip.v1.HeartbeatRequest
+	1, // 1: github.adamgarcia4.golearning.cassandra.gossip.v1.HeartbeatService.Heartbeat:output_type -> github.adamgarcia4.golearning.cassandra.gossip.v1.HeartbeatResponse
 	1, // [1:2] is the sub-list for method output_type
 	0, // [0:1] is the sub-list for method input_type
 	0, // [0:0] is the sub-list for extension type_name
@@ -166,26 +166,26 @@ var file_gossip_proto_heartbeat_proto_depIdxs = []int32{
 	0, // [0:0] is the sub-list for field type_name
 }
 
-func init() { file_gossip_proto_heartbeat_proto_init() }
-func file_gossip_proto_heartbeat_proto_init() {
-	if File_gossip_proto_heartbeat_proto != nil {
+func init() { file_api_gossip_v1_heartbeat_proto_init() }
+func file_api_gossip_v1_heartbeat_proto_init() {
+	if File_api_gossip_v1_heartbeat_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_gossip_proto_heartbeat_proto_rawDesc), len(file_gossip_proto_heartbeat_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_gossip_v1_heartbeat_proto_rawDesc), len(file_api_gossip_v1_heartbeat_proto_rawDesc)),
 			NumEnums:      0,
 			NumMessages:   2,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
-		GoTypes:           file_gossip_proto_heartbeat_proto_goTypes,
-		DependencyIndexes: file_gossip_proto_heartbeat_proto_depIdxs,
-		MessageInfos:      file_gossip_proto_heartbeat_proto_msgTypes,
+		GoTypes:           file_api_gossip_v1_heartbeat_proto_goTypes,
+		DependencyIndexes: file_api_gossip_v1_heartbeat_proto_depIdxs,
+		MessageInfos:      file_api_gossip_v1_heartbeat_proto_msgTypes,
 	}.Build()
-	File_gossip_proto_heartbeat_proto = out.File
-	file_gossip_proto_heartbeat_proto_goTypes = nil
-	file_gossip_proto_heartbeat_proto_depIdxs = nil
+	File_api_gossip_v1_heartbeat_proto = out.File
+	file_api_gossip_v1_heartbeat_proto_goTypes = nil
+	file_api_gossip_v1_heartbeat_proto_depIdxs = nil
 }
