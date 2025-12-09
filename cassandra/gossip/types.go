@@ -41,12 +41,6 @@ Version:
 
 type NodeID string
 
-type HeartbeatState struct {
-	NodeID     NodeID
-	Generation int64 // node start time (unix seconds)
-	Version    int64 // incremented on each heartbeat
-}
-
 type AppStateKey string
 
 const (
@@ -61,6 +55,6 @@ type AppState struct {
 }
 
 type EndpointState struct {
-	Heartbeat HeartbeatState
+	Heartbeat HeartbeatStateSnapshot // snapshot is safe to copy and store
 	AppStates map[AppStateKey]AppState
 }

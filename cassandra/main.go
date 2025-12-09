@@ -34,7 +34,7 @@ func main() {
 			ctx := context.Background()
 
 			// Create heartbeat sender function that uses gRPC client
-			sendHeartbeat := func(heartbeatState gossip.HeartbeatState) (string, int64, error) {
+			sendHeartbeat := func(heartbeatState gossip.HeartbeatStateSnapshot) (string, int64, error) {
 				req := &pbproto.HeartbeatRequest{
 					NodeId:    string(heartbeatState.NodeID),
 					Timestamp: heartbeatState.Generation, // Using Generation as timestamp for now
