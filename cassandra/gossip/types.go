@@ -53,8 +53,3 @@ type AppState struct {
 	Value   string
 	Version int64
 }
-
-type EndpointState struct {
-	Heartbeat HeartbeatStateSnapshot // snapshot is safe to copy and store
-	AppStates map[AppStateKey]AppState
-}
