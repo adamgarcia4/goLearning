@@ -380,6 +380,10 @@ func (m model) View() string {
 	// Logs section - single unified box
 	s.WriteString("\n")
 
+	// Get all log entries once to avoid redundant buffer access
+	allEntries := m.logBuffer.GetAll()
+	totalCount := len(allEntries)
+
 	// Get recent logs (show last 15 entries, adjusted by scroll)
 	logCount := 15
 	maxScroll := 100 // Maximum scroll back
@@ -391,13 +395,19 @@ func (m model) View() string {
 		entriesNeeded = maxScroll + logCount
 	}
 
-	logEntries := m.logBuffer.GetRecent(entriesNeeded)
-
 	var logLines []string
-	if len(logEntries) == 0 {
+	if totalCount == 0 {
 		logLines = []string{"     | (no logs yet)"}
 	} else {
-		// Calculate the range to display
+		// Derive recent entries from allEntries (take last entriesNeeded entries)
+		// If entriesNeeded > totalCount, we'll use all entries
+		recentStart := totalCount - entriesNeeded
+		if recentStart < 0 {
+			recentStart = 0
+		}
+		logEntries := allEntries[recentStart:]
+
+		// Calculate the range to display from logEntries
 		// logScroll=0 means show most recent logCount entries
 		// logScroll=1 means show entries starting 1 position back, etc.
 		start := len(logEntries) - logCount - m.logScroll
@@ -419,22 +429,16 @@ func (m model) View() string {
 			}
 		}
 
-		// Get total count to calculate absolute line numbers
-		allEntries := m.logBuffer.GetAll()
-		totalCount := len(allEntries)
-
 		// Show entries in reverse order (newest first) with line numbers
 		// Most recent = 0, older entries count up
 		// Line number is based on position in full buffer, not display position
-		// logEntries contains the most recent entriesNeeded entries from the buffer
-		// logEntries[0] is at position (totalCount - entriesNeeded) in full buffer
-		// logEntries[entriesNeeded-1] is at position (totalCount - 1) in full buffer (most recent)
-		// For logEntries[i], position in full buffer = totalCount - entriesNeeded + i
-		// Line number = totalCount - 1 - (totalCount - entriesNeeded + i) = entriesNeeded - 1 - i
+		// logEntries[i] corresponds to allEntries[recentStart + i]
+		// Position in full buffer = recentStart + i
+		// Line number: most recent (position totalCount-1) = 0
+		// So line number = totalCount - 1 - (recentStart + i)
 		for i := end - 1; i >= start; i-- {
 			// Calculate line number based on position in full buffer
-			// Position of logEntries[i] in full buffer
-			positionInFullBuffer := totalCount - entriesNeeded + i
+			positionInFullBuffer := recentStart + i
 			// Line number: most recent (position totalCount-1) = 0
 			// So line number = totalCount - 1 - positionInFullBuffer
 			lineNumber := totalCount - 1 - positionInFullBuffer
