@@ -34,15 +34,16 @@ func init() {
 }
 
 type model struct {
-	manager    *node.Manager
-	nodes      []*node.Node
-	deleteMode bool
-	selected   int
-	err        error
-	logBuffer  *logger.LogBuffer
-	logScroll  int // for scrolling logs
-	width      int
-	height     int
+	manager     *node.Manager
+	nodes       []*node.Node
+	deleteMode  bool
+	selected    int
+	err         error
+	logBuffer   *logger.LogBuffer
+	logScroll   int // for scrolling logs
+	width       int
+	height      int
+	lastCommand string // Track last command for repeat (Enter key)
 }
 
 func initialModel() model {
@@ -123,6 +124,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				m.err = nil
 				m.nodes = m.manager.GetNodes()
+				m.lastCommand = "create" // Remember this command
 			}
 			return m, nil
 
@@ -134,6 +136,52 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.deleteMode = true
 			m.selected = 0
+			// Don't set lastCommand yet - wait to see if a number follows
+			return m, nil
+
+		case "enter":
+			// Repeat last command/sequence
+			if m.lastCommand == "" {
+				// No previous command, do nothing
+				return m, nil
+			}
+
+			// Check if it's a delete command with index
+			if strings.HasPrefix(m.lastCommand, "delete:") {
+				// Parse the index from "delete:0" format
+				parts := strings.Split(m.lastCommand, ":")
+				if len(parts) == 2 {
+					if index, err := strconv.Atoi(parts[1]); err == nil {
+						// Replay the sequence: enter delete mode and delete at that index
+						if len(m.nodes) == 0 {
+							m.err = fmt.Errorf("no nodes to delete")
+							return m, nil
+						}
+						// Check if index is still valid
+						if index >= 0 && index < len(m.nodes) {
+							if err := m.manager.DeleteNode(index); err != nil {
+								m.err = err
+							} else {
+								m.nodes = m.manager.GetNodes()
+								m.err = nil
+							}
+						} else {
+							m.err = fmt.Errorf("node index %d no longer exists", index+1)
+						}
+						return m, nil
+					}
+				}
+			} else if m.lastCommand == "create" {
+				// Repeat create node
+				_, err := m.manager.CreateNode()
+				if err != nil {
+					m.err = err
+				} else {
+					m.err = nil
+					m.nodes = m.manager.GetNodes()
+				}
+				return m, nil
+			}
 			return m, nil
 
 		case "esc":
@@ -145,7 +193,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "up", "k":
 			// Scroll logs up (show older logs)
-			if m.logScroll < 100 { // limit scroll
+			// Check how many total entries we have to determine max scroll
+			allEntries := m.logBuffer.GetAll()
+			maxScroll := len(allEntries) - 15 // Can scroll back until we have 15 entries left
+			if maxScroll < 0 {
+				maxScroll = 0
+			}
+			if m.logScroll < maxScroll {
 				m.logScroll++
 			}
 			return m, nil
@@ -202,13 +256,16 @@ func (m model) handleDeleteMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "enter", " ":
 			// Delete selected node
-			if err := m.manager.DeleteNode(m.selected); err != nil {
+			selectedIndex := m.selected
+			if err := m.manager.DeleteNode(selectedIndex); err != nil {
 				m.err = err
 			} else {
 				m.nodes = m.manager.GetNodes()
 				m.deleteMode = false
 				m.selected = 0
 				m.err = nil
+				// Remember the sequence: delete mode + delete at this index
+				m.lastCommand = fmt.Sprintf("delete:%d", selectedIndex)
 			}
 			return m, nil
 
@@ -217,7 +274,8 @@ func (m model) handleDeleteMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if num, err := strconv.Atoi(msg.String()); err == nil {
 				index := num - 1 // Convert to 0-based index
 				if index >= 0 && index < len(m.nodes) {
-					m.selected = index
+					// Store the sequence: delete mode + delete at this index
+					m.lastCommand = fmt.Sprintf("delete:%d", index)
 					if err := m.manager.DeleteNode(index); err != nil {
 						m.err = err
 					} else {
@@ -281,19 +339,69 @@ func (m model) View() string {
 
 	// Get recent logs (show last 15 entries, adjusted by scroll)
 	logCount := 15
-	logEntries := m.logBuffer.GetRecent(logCount + m.logScroll)
+	maxScroll := 100 // Maximum scroll back
+
+	// Calculate how many entries we need to fetch
+	// We need logCount entries to display, plus logScroll to scroll back
+	entriesNeeded := logCount + m.logScroll
+	if entriesNeeded > maxScroll+logCount {
+		entriesNeeded = maxScroll + logCount
+	}
+
+	logEntries := m.logBuffer.GetRecent(entriesNeeded)
 
 	var logLines []string
 	if len(logEntries) == 0 {
-		logLines = []string{"(no logs yet)"}
+		logLines = []string{"     | (no logs yet)"}
 	} else {
-		// Show the most recent entries first (reverse order)
-		start := len(logEntries) - logCount
+		// Calculate the range to display
+		// logScroll=0 means show most recent logCount entries
+		// logScroll=1 means show entries starting 1 position back, etc.
+		start := len(logEntries) - logCount - m.logScroll
 		if start < 0 {
 			start = 0
 		}
-		for i := len(logEntries) - 1; i >= start; i-- {
-			logLines = append(logLines, logger.FormatLogEntry(logEntries[i]))
+		end := len(logEntries) - m.logScroll
+		if end > len(logEntries) {
+			end = len(logEntries)
+		}
+		if end <= start {
+			end = start + logCount
+			if end > len(logEntries) {
+				end = len(logEntries)
+				start = end - logCount
+				if start < 0 {
+					start = 0
+				}
+			}
+		}
+
+		// Get total count to calculate absolute line numbers
+		allEntries := m.logBuffer.GetAll()
+		totalCount := len(allEntries)
+
+		// Show entries in reverse order (newest first) with line numbers
+		// Most recent = 0, older entries count up
+		// Line number is based on position in full buffer, not display position
+		// logEntries contains the most recent entriesNeeded entries from the buffer
+		// logEntries[0] is at position (totalCount - entriesNeeded) in full buffer
+		// logEntries[entriesNeeded-1] is at position (totalCount - 1) in full buffer (most recent)
+		// For logEntries[i], position in full buffer = totalCount - entriesNeeded + i
+		// Line number = totalCount - 1 - (totalCount - entriesNeeded + i) = entriesNeeded - 1 - i
+		for i := end - 1; i >= start; i-- {
+			// Calculate line number based on position in full buffer
+			// Position of logEntries[i] in full buffer
+			positionInFullBuffer := totalCount - entriesNeeded + i
+			// Line number: most recent (position totalCount-1) = 0
+			// So line number = totalCount - 1 - positionInFullBuffer
+			lineNumber := totalCount - 1 - positionInFullBuffer
+			if lineNumber < 0 {
+				lineNumber = 0
+			}
+
+			// Format with line number (right-aligned, 4 digits)
+			lineNum := fmt.Sprintf("%4d", lineNumber)
+			logLines = append(logLines, fmt.Sprintf("%s | %s", lineNum, logger.FormatLogEntry(logEntries[i])))
 		}
 	}
 
@@ -323,12 +431,41 @@ func (m model) View() string {
 		PaddingTop(1)
 
 	if m.deleteMode {
-		s.WriteString(instructionsStyle.Render("DELETE MODE: Use ↑/↓ or press 1-9 to select node, Enter/Space to delete, Esc to cancel"))
+		s.WriteString(instructionsStyle.Render("DELETE MODE: Use ↑/↓/j/k or press 1-9 to select node, Enter/Space to delete, Esc to cancel"))
 	} else {
-		s.WriteString(instructionsStyle.Render("Press C to create a node | D to delete a node | ↑/↓ to scroll logs | Q to quit"))
+		instructionText := "Press C to create a node | D to delete a node"
+
+		// Add inline preview if there's a last command
+		if m.lastCommand != "" {
+			previewText := formatCommandPreview(m.lastCommand)
+			instructionText += fmt.Sprintf(" | Enter to repeat (%s)", previewText)
+		} else {
+			instructionText += " | Enter to repeat last command"
+		}
+
+		instructionText += " | ↑/↓/j/k to scroll logs | Q to quit"
+		s.WriteString(instructionsStyle.Render(instructionText))
 	}
 
 	return s.String()
+}
+
+// formatCommandPreview formats the last command for display
+func formatCommandPreview(lastCommand string) string {
+	if strings.HasPrefix(lastCommand, "delete:") {
+		// Parse "delete:0" format
+		parts := strings.Split(lastCommand, ":")
+		if len(parts) == 2 {
+			if index, err := strconv.Atoi(parts[1]); err == nil {
+				// Show as multi-step: D → 1 (where 1 is index+1)
+				return fmt.Sprintf("D → %d", index+1)
+			}
+		}
+		return "D → [node]"
+	} else if lastCommand == "create" {
+		return "C"
+	}
+	return lastCommand
 }
 
 func runInteractive(cmd *cobra.Command, args []string) {
