@@ -114,6 +114,9 @@ type GossipState struct {
 type HeartbeatSender func(heartbeatState HeartbeatStateSnapshot) (string, int64, error)
 
 func (g *GossipState) SendHeartbeat(sendHeartbeat HeartbeatSender) (string, int64, error) {
+	if g.myHeartbeatState == nil {
+		panic("GossipState not initialized: use NewGossipState")
+	}
 	// HeartbeatState manages its own mutex, so we don't need to lock GossipState here
 	updatedHeartbeatState := g.myHeartbeatState.UpdateHeartbeat()
 	return sendHeartbeat(updatedHeartbeatState)
@@ -138,6 +141,9 @@ func (g *GossipState) InitializeHeartbeatSending(ctx context.Context, sendHeartb
 }
 
 func (g *GossipState) LocalHeartbeat() HeartbeatStateSnapshot {
+	if g.myHeartbeatState == nil {
+		panic("GossipState not initialized: use NewGossipState")
+	}
 	// HeartbeatState manages its own mutex, so we can safely get a snapshot
 	return g.myHeartbeatState.GetSnapshot()
 }
@@ -145,6 +151,9 @@ func (g *GossipState) LocalHeartbeat() HeartbeatStateSnapshot {
 // HandleHeartbeat processes an incoming heartbeat from a remote node
 // It merges the remote state and returns the local node's heartbeat state
 func (g *GossipState) HandleHeartbeat(remoteNodeID string, remoteGeneration int64, remoteVersion int64) (localNodeID string, localGeneration int64, localVersion int64, err error) {
+	if g.myHeartbeatState == nil {
+		panic("GossipState not initialized: use NewGossipState")
+	}
 	// TODO: Implement proper state merging logic
 	// For now, just return our local state
 	// In the future, this should:
