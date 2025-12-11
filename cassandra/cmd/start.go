@@ -69,6 +69,13 @@ func runStart(cmd *cobra.Command, args []string) {
 		log.Fatalf("failed to start node: %v", err)
 	}
 
-	// Block forever (node runs until interrupted)
-	select {}
+	// Wait for interrupt signal for graceful shutdown
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	<-sigChan
+
+	log.Println("Shutting down...")
+	if err := n.Stop(); err != nil {
+		log.Printf("Error during shutdown: %v", err)
+	}
 }
