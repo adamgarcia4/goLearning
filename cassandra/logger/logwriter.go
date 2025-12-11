@@ -30,8 +30,8 @@ func (lw *LogBufferWriter) Write(p []byte) (n int, err error) {
 	lw.mu.Lock()
 	defer lw.mu.Unlock()
 
-	// Buffer until we get a newline
-	lw.buf.Write(p)
+	// Buffer the input
+	written, _ := lw.buf.Write(p)  // bytes.Buffer.Write never returns error
 
 	// Process complete lines
 	for {
@@ -40,7 +40,10 @@ func (lw *LogBufferWriter) Write(p []byte) (n int, err error) {
 			break
 		}
 		if err != nil {
-			return len(p), err
+			// If we can't read from our own buffer, something is seriously wrong
+			// Write the partial line back
+			lw.buf.WriteString(line)
+			return 0, err
 		}
 
 		// Remove newline
@@ -63,6 +66,6 @@ func (lw *LogBufferWriter) Write(p []byte) (n int, err error) {
 		lw.buffer.Add(nodeID, message)
 	}
 
-	return len(p), nil
+	return written, nil
 }
 
