@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"log"
 	"strconv"
 	"strings"
 	"time"
@@ -51,7 +52,10 @@ func initialModel() model {
 	// Initialize logger for interactive mode (no stdout, only log buffer)
 	logBuffer := logger.GetGlobalLogBuffer()
 	logger.Init("", false) // No prefix, no stdout
-	logger.AddOutput(logger.NewLogBufferWriter(logBuffer))
+	if err := logger.AddOutput(logger.NewLogBufferWriter(logBuffer)); err != nil {
+		// Use standard log since logger might not be fully initialized
+		log.Fatalf("Failed to add log buffer output: %v", err)
+	}
 
 	return model{
 		manager:      node.NewManager(),

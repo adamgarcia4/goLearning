@@ -1,6 +1,10 @@
+// Package logger provides a configurable logger that can write to multiple outputs.
+// Init must be called early in the application lifecycle before using other logger functions.
+// Functions like AddOutput and SetEnabled will return errors if called before Init.
 package logger
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -47,19 +51,23 @@ func Init(prefix string, writeToStdout bool) {
 	})
 }
 
-// AddOutput adds an additional output writer (e.g., for TUI log buffer)
-func AddOutput(w io.Writer) {
-	if globalLogger != nil {
-		globalLogger.mu.Lock()
-		defer globalLogger.mu.Unlock()
-		globalLogger.outputs = append(globalLogger.outputs, w)
+// AddOutput adds an additional output writer (e.g., for TUI log buffer).
+// Returns an error if called before Init.
+func AddOutput(w io.Writer) error {
+	if globalLogger == nil {
+		return errors.New("logger not initialized: call logger.Init() first")
 	}
+	globalLogger.mu.Lock()
+	defer globalLogger.mu.Unlock()
+	globalLogger.outputs = append(globalLogger.outputs, w)
+	return nil
 }
 
-// RemoveOutput removes an output writer
-func RemoveOutput(w io.Writer) {
+// RemoveOutput removes an output writer.
+// Returns an error if called before Init.
+func RemoveOutput(w io.Writer) error {
 	if globalLogger == nil {
-		return
+		return errors.New("logger not initialized: call logger.Init() first")
 	}
 	globalLogger.mu.Lock()
 	defer globalLogger.mu.Unlock()
@@ -71,15 +79,19 @@ func RemoveOutput(w io.Writer) {
 		}
 	}
 	globalLogger.outputs = newOutputs
+	return nil
 }
 
-// SetEnabled enables or disables logging
-func SetEnabled(enabled bool) {
-	if globalLogger != nil {
-		globalLogger.mu.Lock()
-		defer globalLogger.mu.Unlock()
-		globalLogger.enabled = enabled
+// SetEnabled enables or disables logging.
+// Returns an error if called before Init.
+func SetEnabled(enabled bool) error {
+	if globalLogger == nil {
+		return errors.New("logger not initialized: call logger.Init() first")
 	}
+	globalLogger.mu.Lock()
+	defer globalLogger.mu.Unlock()
+	globalLogger.enabled = enabled
+	return nil
 }
 
 // Printf logs a formatted message
