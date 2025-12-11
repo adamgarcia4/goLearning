@@ -152,7 +152,8 @@ func (g *GossipState) HandleHeartbeat(remoteNodeID string, remoteGeneration int6
 	// 2. Merge remote state into StateByNode map
 	// 3. Update local state if remote is newer
 
-	return string(g.myHeartbeatState.NodeID), g.myHeartbeatState.Generation, g.myHeartbeatState.Version, nil
+	snapshot := g.myHeartbeatState.GetSnapshot()
+	return string(snapshot.NodeID), snapshot.Generation, snapshot.Version, nil
 }
 
 func (g *GossipState) Start(ctx context.Context, sendHeartbeat HeartbeatSender) {
