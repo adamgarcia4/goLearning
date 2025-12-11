@@ -34,16 +34,17 @@ func init() {
 }
 
 type model struct {
-	manager     *node.Manager
-	nodes       []*node.Node
-	deleteMode  bool
-	selected    int
-	err         error
-	logBuffer   *logger.LogBuffer
-	logScroll   int // for scrolling logs
-	width       int
-	height      int
-	lastCommand string // Track last command for repeat (Enter key)
+	manager      *node.Manager
+	nodes        []*node.Node
+	deleteMode   bool
+	selected     int
+	err          error
+	logBuffer    *logger.LogBuffer
+	logScroll    int // for scrolling logs
+	width        int
+	height       int
+	lastCommand  string // Track last command for repeat (Enter key)
+	numericInput string // Buffer for multi-digit numeric input in delete mode
 }
 
 func initialModel() model {
@@ -53,12 +54,13 @@ func initialModel() model {
 	logger.AddOutput(logger.NewLogBufferWriter(logBuffer))
 
 	return model{
-		manager:    node.NewManager(),
-		nodes:      []*node.Node{},
-		deleteMode: false,
-		selected:   0,
-		logBuffer:  logBuffer,
-		logScroll:  0,
+		manager:      node.NewManager(),
+		nodes:        []*node.Node{},
+		deleteMode:   false,
+		selected:     0,
+		logBuffer:    logBuffer,
+		logScroll:    0,
+		numericInput: "",
 	}
 }
 
@@ -135,6 +137,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.deleteMode = true
 			m.selected = 0
+			m.numericInput = "" // Reset numeric input buffer
 			// Don't set lastCommand yet - wait to see if a number follows
 			return m, nil
 
@@ -247,6 +250,7 @@ func (m model) handleDeleteMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.deleteMode = false
 			m.selected = 0
 			m.err = nil
+			m.numericInput = "" // Clear numeric input buffer
 			return m, nil
 
 		case "up", "k":
@@ -262,7 +266,37 @@ func (m model) handleDeleteMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case "enter", " ":
-			// Delete selected node
+			// If there's numeric input, process that first
+			if m.numericInput != "" {
+				// Parse the entire input string as an integer
+				if num, err := strconv.Atoi(m.numericInput); err == nil {
+					// Validate: 1 <= num <= len(m.nodes)
+					if num >= 1 && num <= len(m.nodes) {
+						index := num - 1 // Convert to 0-based index
+						// Store the sequence: delete mode + delete at this index
+						m.lastCommand = fmt.Sprintf("delete:%d", index)
+						if err := m.manager.DeleteNode(index); err != nil {
+							m.err = err
+						} else {
+							m.nodes = m.manager.GetNodes()
+							m.deleteMode = false
+							m.selected = 0
+							m.err = nil
+						}
+						m.numericInput = ""
+						return m, nil
+					} else {
+						m.err = fmt.Errorf("node %d does not exist (max: %d)", num, len(m.nodes))
+						m.numericInput = ""
+						return m, nil
+					}
+				} else {
+					m.err = fmt.Errorf("invalid number: %s", m.numericInput)
+					m.numericInput = ""
+					return m, nil
+				}
+			}
+			// Otherwise, delete selected node
 			selectedIndex := m.selected
 			if err := m.manager.DeleteNode(selectedIndex); err != nil {
 				m.err = err
@@ -277,21 +311,23 @@ func (m model) handleDeleteMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		default:
-			// Try to parse as number (1-9)
-			if num, err := strconv.Atoi(msg.String()); err == nil {
-				index := num - 1 // Convert to 0-based index
-				if index >= 0 && index < len(m.nodes) {
-					// Store the sequence: delete mode + delete at this index
-					m.lastCommand = fmt.Sprintf("delete:%d", index)
-					if err := m.manager.DeleteNode(index); err != nil {
-						m.err = err
-					} else {
-						m.nodes = m.manager.GetNodes()
-						m.deleteMode = false
-						m.selected = 0
-						m.err = nil
-					}
+			// Handle numeric input (supports multi-digit numbers)
+			keyStr := msg.String()
+
+			// Check if it's a digit (0-9)
+			if len(keyStr) == 1 && keyStr >= "0" && keyStr <= "9" {
+				// Append to numeric input buffer
+				m.numericInput += keyStr
+				// Clear any previous error when typing
+				if m.err != nil && strings.Contains(m.err.Error(), "does not exist") {
+					m.err = nil
 				}
+				return m, nil
+			}
+
+			// Non-numeric key, clear the buffer
+			if m.numericInput != "" {
+				m.numericInput = ""
 			}
 			return m, nil
 		}
@@ -438,7 +474,11 @@ func (m model) View() string {
 		PaddingTop(1)
 
 	if m.deleteMode {
-		s.WriteString(instructionsStyle.Render("DELETE MODE: Use ↑/↓/j/k or press 1-9 to select node, Enter/Space to delete, Esc to cancel"))
+		helpText := "DELETE MODE: Use ↑/↓/j/k or type node number (1-%d, multi-digit supported), Enter to confirm, Esc to cancel"
+		if m.numericInput != "" {
+			helpText = fmt.Sprintf("DELETE MODE: Type node number (current: %s) or Enter to confirm, Esc to cancel", m.numericInput)
+		}
+		s.WriteString(instructionsStyle.Render(fmt.Sprintf(helpText, len(m.nodes))))
 	} else {
 		instructionText := "Press C to create a node | D to delete a node"
 
