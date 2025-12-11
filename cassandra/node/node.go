@@ -79,28 +79,33 @@ func (n *Node) Start() error {
 // Stop stops the node gracefully
 func (n *Node) Stop() error {
 	n.mu.Lock()
-	defer n.mu.Unlock()
-
-	n.logf("Stopping node %s...", n.config.NodeID)
-
+	nodeID := n.config.NodeID
+	grpcServer := n.grpcServer
+	clientConn := n.clientConn
+	
 	// Cancel context to stop all goroutines (heartbeat sending, etc.)
 	n.cancel()
+	n.mu.Unlock()
+
+	n.logf("Stopping node %s...", nodeID)
 
 	// Stop gRPC server first (this will unblock the Serve() call)
-	if n.grpcServer != nil {
-		if err := n.grpcServer.Stop(); err != nil {
+	// Lock is released to avoid deadlocks if callbacks try to access Node
+	if grpcServer != nil {
+		if err := grpcServer.Stop(); err != nil {
 			n.logf("Error stopping gRPC server: %v", err)
 		}
 	}
 
 	// Close client connection if exists
-	if n.clientConn != nil {
-		if err := n.clientConn.Close(); err != nil {
+	// Lock is released to avoid deadlocks if callbacks try to access Node
+	if clientConn != nil {
+		if err := clientConn.Close(); err != nil {
 			n.logf("Error closing client connection: %v", err)
 		}
 	}
 
-	n.logf("Node %s stopped", n.config.NodeID)
+	n.logf("Node %s stopped", nodeID)
 	return nil
 }
 
