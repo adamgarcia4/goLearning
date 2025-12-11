@@ -24,7 +24,6 @@ type Node struct {
 	// Lifecycle management
 	ctx    context.Context
 	cancel context.CancelFunc
-	wg     sync.WaitGroup
 	mu     sync.RWMutex
 }
 
@@ -100,9 +99,6 @@ func (n *Node) Stop() error {
 			n.logf("Error closing client connection: %v", err)
 		}
 	}
-
-	// Wait for all goroutines to finish
-	n.wg.Wait()
 
 	n.logf("Node %s stopped", n.config.NodeID)
 	return nil
