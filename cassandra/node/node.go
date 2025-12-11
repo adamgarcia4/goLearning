@@ -85,7 +85,9 @@ func (n *Node) Stop() error {
 
 	// Stop gRPC server first (this will unblock the Serve() call)
 	if n.grpcServer != nil {
-		n.grpcServer.Stop()
+		if err := n.grpcServer.Stop(); err != nil {
+			n.logf("Error stopping gRPC server: %v", err)
+		}
 	}
 
 	// Close client connection if exists

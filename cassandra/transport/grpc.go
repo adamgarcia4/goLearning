@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"sync"
 
 	gossipProtobuffer "github.com/adamgarcia4/goLearning/cassandra/api/gossip/v1"
 	"google.golang.org/grpc"
@@ -18,6 +19,8 @@ type GRPC struct {
 	gossipHandler GossipHandler
 	// logger *log.Logger
 	serveErrCh chan error // Channel to receive Serve() errors (for monitoring)
+	stopOnce   sync.Once  // Ensures Stop() is idempotent and thread-safe
+	stopErr    error      // Captured error from lis.Close()
 }
 
 func (g *GRPC) setupTcp() (net.Listener, error) {
@@ -78,14 +81,20 @@ func (g *GRPC) Start() error {
 	return nil
 }
 
-// Stop gracefully stops the gRPC server
-func (g *GRPC) Stop() {
-	if g.srv != nil {
-		g.srv.GracefulStop()
-	}
-	if g.lis != nil {
-		g.lis.Close()
-	}
+// Stop gracefully stops the gRPC server.
+// It is idempotent and thread-safe, and returns any error from closing the listener.
+func (g *GRPC) Stop() error {
+	g.stopOnce.Do(func() {
+		// Stop the gRPC server gracefully (this will unblock Serve())
+		if g.srv != nil {
+			g.srv.GracefulStop()
+		}
+		// Close the listener and capture any error
+		if g.lis != nil {
+			g.stopErr = g.lis.Close()
+		}
+	})
+	return g.stopErr
 }
 
 func NewGRPC(addr string, nodeID string, gossipHandler GossipHandler) (*GRPC, error) {
