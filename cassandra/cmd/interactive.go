@@ -50,7 +50,7 @@ func initialModel() model {
 	logBuffer := logger.GetGlobalLogBuffer()
 	logger.Init("", false) // No prefix, no stdout
 	logger.AddOutput(logger.NewLogBufferWriter(logBuffer))
-	
+
 	return model{
 		manager:    node.NewManager(),
 		nodes:      []*node.Node{},
@@ -84,14 +84,28 @@ type nodesUpdatedMsg struct {
 	nodes []*node.Node
 }
 
+type quitMsg struct{}
+
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		// Handle quit
 		if msg.String() == "q" || msg.String() == "ctrl+c" {
-			// Stop all nodes before quitting
-			m.manager.StopAll()
-			return m, tea.Quit
+			// Stop all nodes gracefully
+			// Run in goroutine to avoid blocking, but wait a bit for shutdown
+			go func() {
+				if err := m.manager.StopAll(); err != nil {
+					// Log error but continue with quit
+					fmt.Printf("Error stopping nodes: %v\n", err)
+				}
+			}()
+			// Small delay to allow graceful shutdown to start
+			return m, tea.Sequence(
+				func() tea.Msg {
+					time.Sleep(200 * time.Millisecond)
+					return quitMsg{}
+				},
+			)
 		}
 
 		// Handle delete mode
@@ -156,6 +170,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case nodesUpdatedMsg:
 		m.nodes = msg.nodes
 		return m, nil
+
+	case quitMsg:
+		return m, tea.Quit
 	}
 
 	return m, nil

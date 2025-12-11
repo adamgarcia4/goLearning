@@ -61,6 +61,16 @@ func (g *GRPC) Start() error {
 	return g.srv.Serve(g.lis)
 }
 
+// Stop gracefully stops the gRPC server
+func (g *GRPC) Stop() {
+	if g.srv != nil {
+		g.srv.GracefulStop()
+	}
+	if g.lis != nil {
+		g.lis.Close()
+	}
+}
+
 func NewGRPC(addr string, nodeID string, gossipHandler GossipHandler) (*GRPC, error) {
 	if addr == "" || !strings.Contains(addr, ":") {
 		return nil, fmt.Errorf("invalid address: %s", addr)

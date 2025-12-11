@@ -80,8 +80,13 @@ func (n *Node) Stop() error {
 
 	n.logf("Stopping node %s...", n.config.NodeID)
 
-	// Cancel context to stop all goroutines
+	// Cancel context to stop all goroutines (heartbeat sending, etc.)
 	n.cancel()
+
+	// Stop gRPC server first (this will unblock the Serve() call)
+	if n.grpcServer != nil {
+		n.grpcServer.Stop()
+	}
 
 	// Close client connection if exists
 	if n.clientConn != nil {
