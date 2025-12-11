@@ -23,6 +23,7 @@ var interactiveCmd = &cobra.Command{
 Keyboard shortcuts:
   C - Create a new node
   D - Delete a node (shows selection menu)
+  DD - Delete the first active node
   Q - Quit
 
 Examples:
@@ -34,20 +35,27 @@ func init() {
 	rootCmd.AddCommand(interactiveCmd)
 }
 
+// State represents the current state of the interactive UI
+type State int
+
+const (
+	StateNormal State = iota
+	StateDeleteSelect
+	StateWaitingForSecondD
+)
+
 type model struct {
-	manager           *node.Manager
-	nodes             []*node.Node
-	deleteMode        bool
-	selected          int
-	err               error
-	logBuffer         *logger.LogBuffer
-	logScroll         int // for scrolling logs
-	width             int
-	height            int
-	lastCommand       string // Track last command for repeat (Enter key)
-	numericInput      string // Buffer for multi-digit numeric input in delete mode
-	lastKey           string // Track last key press for detecting double key presses (e.g., DD)
-	enteredDeleteViaD bool   // Track if we entered delete mode via D press (for DD detection)
+	manager      *node.Manager
+	nodes        []*node.Node
+	state        State
+	selected     int
+	err          error
+	logBuffer    *logger.LogBuffer
+	logScroll    int // for scrolling logs
+	width        int
+	height       int
+	lastCommand  string // Track last command for repeat (Enter key)
+	numericInput string // Buffer for multi-digit numeric input in delete mode
 }
 
 func initialModel() model {
@@ -60,15 +68,13 @@ func initialModel() model {
 	}
 
 	return model{
-		manager:           node.NewManager(),
-		nodes:             []*node.Node{},
-		deleteMode:        false,
-		selected:          0,
-		logBuffer:         logBuffer,
-		logScroll:         0,
-		numericInput:      "",
-		lastKey:           "",
-		enteredDeleteViaD: false,
+		manager:      node.NewManager(),
+		nodes:        []*node.Node{},
+		state:        StateNormal,
+		selected:     0,
+		logBuffer:    logBuffer,
+		logScroll:    0,
+		numericInput: "",
 	}
 }
 
@@ -109,152 +115,318 @@ func shutdownNodes(manager *node.Manager) tea.Cmd {
 	}
 }
 
+// keyHandler processes a key press and returns the new state and command
+type keyHandler func(*model, tea.KeyMsg) (State, tea.Cmd)
+
+// actionResult contains the result of an action
+type actionResult struct {
+	state       State
+	lastCommand string
+	err         error
+}
+
+// Action functions
+
+// handleCreateNode creates a new node
+func handleCreateNode(m *model) actionResult {
+	_, err := m.manager.CreateNode()
+	if err != nil {
+		return actionResult{state: m.state, err: err}
+	}
+	m.nodes = m.manager.GetNodes()
+	return actionResult{state: m.state, lastCommand: "create"}
+}
+
+// handleDeleteNode deletes a node at the given index
+func handleDeleteNode(m *model, index int) actionResult {
+	if err := m.manager.DeleteNode(index); err != nil {
+		return actionResult{state: m.state, err: err}
+	}
+	m.nodes = m.manager.GetNodes()
+	return actionResult{
+		state:       StateNormal,
+		lastCommand: fmt.Sprintf("delete:%d", index),
+	}
+}
+
+// handleEnterDeleteMode transitions to delete selection mode
+func handleEnterDeleteMode(m *model) State {
+	if len(m.nodes) == 0 {
+		m.err = fmt.Errorf("no nodes to delete")
+		return m.state
+	}
+	m.selected = 0
+	m.numericInput = ""
+	return StateDeleteSelect
+}
+
+// handleCancelDelete cancels delete mode
+func handleCancelDelete(m *model) State {
+	m.selected = 0
+	m.numericInput = ""
+	m.err = nil
+	return StateNormal
+}
+
+// handleScrollLogs scrolls the log view
+func handleScrollLogs(m *model, direction string) {
+	allEntries := m.logBuffer.GetAll()
+	maxScroll := len(allEntries) - 15
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+
+	switch direction {
+	case "up":
+		if m.logScroll < maxScroll {
+			m.logScroll++
+		}
+	case "down":
+		if m.logScroll > 0 {
+			m.logScroll--
+		}
+	}
+}
+
+// handleRepeatLastCommand repeats the last command
+func handleRepeatLastCommand(m *model) actionResult {
+	if m.lastCommand == "" {
+		return actionResult{state: m.state}
+	}
+
+	if strings.HasPrefix(m.lastCommand, "delete:") {
+		parts := strings.Split(m.lastCommand, ":")
+		if len(parts) == 2 {
+			if index, err := strconv.Atoi(parts[1]); err == nil {
+				if len(m.nodes) == 0 {
+					return actionResult{state: m.state, err: fmt.Errorf("no nodes to delete")}
+				}
+				if index >= 0 && index < len(m.nodes) {
+					return handleDeleteNode(m, index)
+				}
+				return actionResult{state: m.state, err: fmt.Errorf("node index %d no longer exists", index+1)}
+			}
+		}
+	} else if m.lastCommand == "create" {
+		return handleCreateNode(m)
+	}
+
+	return actionResult{state: m.state}
+}
+
+// Key handler functions
+
+// handleCreateNodeKey handles C key press
+func handleCreateNodeKey(m *model, msg tea.KeyMsg) (State, tea.Cmd) {
+	result := handleCreateNode(m)
+	m.err = result.err
+	if result.lastCommand != "" {
+		m.lastCommand = result.lastCommand
+	}
+	return result.state, nil
+}
+
+// handleFirstD handles first D press (enters delete mode or detects DD)
+func handleFirstD(m *model, msg tea.KeyMsg) (State, tea.Cmd) {
+	if m.state == StateWaitingForSecondD {
+		// This is the second D - delete first node
+		if len(m.nodes) > 0 {
+			result := handleDeleteNode(m, 0)
+			m.err = result.err
+			if result.lastCommand != "" {
+				m.lastCommand = result.lastCommand
+			}
+			return result.state, nil
+		}
+	}
+	// First D - transition to waiting for second D
+	if len(m.nodes) == 0 {
+		m.err = fmt.Errorf("no nodes to delete")
+		return m.state, nil
+	}
+	return StateWaitingForSecondD, nil
+}
+
+// handleQuit handles quit commands
+func handleQuit(m *model, msg tea.KeyMsg) (State, tea.Cmd) {
+	return m.state, shutdownNodes(m.manager)
+}
+
+// handleEnter handles Enter key
+func handleEnter(m *model, msg tea.KeyMsg) (State, tea.Cmd) {
+	if m.state == StateDeleteSelect {
+		// Handle delete confirmation
+		if m.numericInput != "" {
+			if num, err := strconv.Atoi(m.numericInput); err == nil {
+				if num >= 1 && num <= len(m.nodes) {
+					index := num - 1
+					result := handleDeleteNode(m, index)
+					m.err = result.err
+					m.numericInput = ""
+					if result.lastCommand != "" {
+						m.lastCommand = result.lastCommand
+					}
+					return result.state, nil
+				}
+				m.err = fmt.Errorf("node %d does not exist (max: %d)", num, len(m.nodes))
+				m.numericInput = ""
+				return m.state, nil
+			}
+			m.err = fmt.Errorf("invalid number: %s", m.numericInput)
+			m.numericInput = ""
+			return m.state, nil
+		}
+		// Delete selected node
+		result := handleDeleteNode(m, m.selected)
+		m.err = result.err
+		if result.lastCommand != "" {
+			m.lastCommand = result.lastCommand
+		}
+		return result.state, nil
+	}
+	// In normal mode, repeat last command
+	result := handleRepeatLastCommand(m)
+	m.err = result.err
+	if result.lastCommand != "" {
+		m.lastCommand = result.lastCommand
+	}
+	return result.state, nil
+}
+
+// handleSpace handles Space key (same as Enter in delete mode)
+func handleSpace(m *model, msg tea.KeyMsg) (State, tea.Cmd) {
+	if m.state == StateDeleteSelect {
+		return handleEnter(m, msg)
+	}
+	return m.state, nil
+}
+
+// handleEscape handles Escape key
+func handleEscape(m *model, msg tea.KeyMsg) (State, tea.Cmd) {
+	if m.state == StateDeleteSelect {
+		return handleCancelDelete(m), nil
+	}
+	if m.state == StateWaitingForSecondD {
+		return StateNormal, nil
+	}
+	return m.state, nil
+}
+
+// handleUp handles Up/K keys
+func handleUp(m *model, msg tea.KeyMsg) (State, tea.Cmd) {
+	if m.state == StateDeleteSelect {
+		if m.selected > 0 {
+			m.selected--
+		}
+		return m.state, nil
+	}
+	handleScrollLogs(m, "up")
+	return m.state, nil
+}
+
+// handleDown handles Down/J keys
+func handleDown(m *model, msg tea.KeyMsg) (State, tea.Cmd) {
+	if m.state == StateDeleteSelect {
+		if m.selected < len(m.nodes)-1 {
+			m.selected++
+		}
+		return m.state, nil
+	}
+	handleScrollLogs(m, "down")
+	return m.state, nil
+}
+
+// handleNumeric handles numeric input (0-9)
+func handleNumeric(m *model, msg tea.KeyMsg) (State, tea.Cmd) {
+	if m.state == StateDeleteSelect {
+		keyStr := msg.String()
+		m.numericInput += keyStr
+		if m.err != nil && strings.Contains(m.err.Error(), "does not exist") {
+			m.err = nil
+		}
+		return m.state, nil
+	}
+	return m.state, nil
+}
+
+// handleOtherKey handles any other key press
+func handleOtherKey(m *model, msg tea.KeyMsg) (State, tea.Cmd) {
+	// If waiting for second D and got another key, enter delete mode
+	if m.state == StateWaitingForSecondD {
+		return handleEnterDeleteMode(m), nil
+	}
+	if m.state == StateDeleteSelect {
+		// Clear numeric input on non-numeric keys
+		m.numericInput = ""
+	}
+	return m.state, nil
+}
+
+// keyHandlers maps states to their key bindings
+var keyHandlers = map[State]map[string]keyHandler{
+	StateNormal: {
+		"c":      handleCreateNodeKey,
+		"C":      handleCreateNodeKey,
+		"d":      handleFirstD,
+		"D":      handleFirstD,
+		"q":      handleQuit,
+		"ctrl+c": handleQuit,
+		"enter":  handleEnter,
+		"up":     handleUp,
+		"k":      handleUp,
+		"down":   handleDown,
+		"j":      handleDown,
+	},
+	StateWaitingForSecondD: {
+		"d":     handleFirstD,
+		"D":     handleFirstD,
+		"esc":   handleEscape,
+		"enter": handleEscape, // Reset on Enter if not second D
+	},
+	StateDeleteSelect: {
+		"esc":   handleEscape,
+		"enter": handleEnter,
+		" ":     handleSpace,
+		"up":    handleUp,
+		"k":     handleUp,
+		"down":  handleDown,
+		"j":     handleDown,
+		"0":     handleNumeric,
+		"1":     handleNumeric,
+		"2":     handleNumeric,
+		"3":     handleNumeric,
+		"4":     handleNumeric,
+		"5":     handleNumeric,
+		"6":     handleNumeric,
+		"7":     handleNumeric,
+		"8":     handleNumeric,
+		"9":     handleNumeric,
+	},
+}
+
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		// Handle quit
-		if msg.String() == "q" || msg.String() == "ctrl+c" {
-			// Stop all nodes gracefully and wait for completion
-			return m, shutdownNodes(m.manager)
+		// Get the handler map for current state
+		stateHandlers, ok := keyHandlers[m.state]
+		if !ok {
+			// Unknown state, treat as normal state
+			stateHandlers = keyHandlers[StateNormal]
 		}
 
-		// Handle delete mode
-		if m.deleteMode {
-			return m.handleDeleteMode(msg)
-		}
-
-		// Handle normal mode
 		keyStr := msg.String()
-		switch keyStr {
-		case "c", "C":
-			// Create new node
-			_, err := m.manager.CreateNode()
-			if err != nil {
-				m.err = err
-			} else {
-				m.err = nil
-				m.nodes = m.manager.GetNodes()
-				m.lastCommand = "create" // Remember this command
-			}
-			m.lastKey = keyStr
-			return m, nil
-
-		case "d", "D":
-			// Check if this is a double D press (DD) - either in normal mode or if we just entered delete mode
-			if (m.lastKey == "d" || m.lastKey == "D" || m.enteredDeleteViaD) && len(m.nodes) > 0 {
-				// Double D: delete first active node directly
-				if err := m.manager.DeleteNode(0); err != nil {
-					m.err = err
-				} else {
-					m.nodes = m.manager.GetNodes()
-					m.err = nil
-					m.lastCommand = "delete:0" // Remember this command
-				}
-				m.lastKey = "" // Reset after double press
-				m.enteredDeleteViaD = false
-				m.deleteMode = false // Make sure we exit delete mode if we were in it
-				return m, nil
-			}
-			// Single D: Enter delete mode
-			if len(m.nodes) == 0 {
-				m.err = fmt.Errorf("no nodes to delete")
-				m.lastKey = keyStr
-				m.enteredDeleteViaD = false
-				return m, nil
-			}
-			m.deleteMode = true
-			m.selected = 0
-			m.numericInput = ""        // Reset numeric input buffer
-			m.lastKey = keyStr         // Remember this key press
-			m.enteredDeleteViaD = true // Mark that we entered delete mode via D
-			// Don't set lastCommand yet - wait to see if a number follows
-			return m, nil
-
-		case "enter":
-			// Reset lastKey on enter (so DD detection only works for consecutive D presses)
-			m.lastKey = ""
-			// Repeat last command/sequence
-			if m.lastCommand == "" {
-				// No previous command, do nothing
-				return m, nil
-			}
-
-			// Check if it's a delete command with index
-			if strings.HasPrefix(m.lastCommand, "delete:") {
-				// Parse the index from "delete:0" format
-				parts := strings.Split(m.lastCommand, ":")
-				if len(parts) == 2 {
-					if index, err := strconv.Atoi(parts[1]); err == nil {
-						// Replay the sequence: enter delete mode and delete at that index
-						if len(m.nodes) == 0 {
-							m.err = fmt.Errorf("no nodes to delete")
-							return m, nil
-						}
-						// Check if index is still valid
-						if index >= 0 && index < len(m.nodes) {
-							if err := m.manager.DeleteNode(index); err != nil {
-								m.err = err
-							} else {
-								m.nodes = m.manager.GetNodes()
-								m.err = nil
-							}
-						} else {
-							m.err = fmt.Errorf("node index %d no longer exists", index+1)
-						}
-						return m, nil
-					}
-				}
-			} else if m.lastCommand == "create" {
-				// Repeat create node
-				_, err := m.manager.CreateNode()
-				if err != nil {
-					m.err = err
-				} else {
-					m.err = nil
-					m.nodes = m.manager.GetNodes()
-				}
-				return m, nil
-			}
-			return m, nil
-
-		case "esc":
-			// Exit delete mode
-			m.deleteMode = false
-			m.selected = 0
-			m.err = nil
-			m.lastKey = "" // Reset on escape
-			m.enteredDeleteViaD = false
-			return m, nil
-
-		case "up", "k":
-			// Reset lastKey on other key presses
-			m.lastKey = ""
-			// Scroll logs up (show older logs)
-			// Check how many total entries we have to determine max scroll
-			allEntries := m.logBuffer.GetAll()
-			maxScroll := len(allEntries) - 15 // Can scroll back until we have 15 entries left
-			if maxScroll < 0 {
-				maxScroll = 0
-			}
-			if m.logScroll < maxScroll {
-				m.logScroll++
-			}
-			return m, nil
-
-		case "down", "j":
-			// Reset lastKey on other key presses
-			m.lastKey = ""
-			// Scroll logs down (show newer logs)
-			if m.logScroll > 0 {
-				m.logScroll--
-			}
-			return m, nil
-
-		default:
-			// Reset lastKey for any other key press (except D)
-			m.lastKey = ""
-			return m, nil
+		handler, found := stateHandlers[keyStr]
+		if found {
+			// Found specific handler for this key
+			newState, cmd := handler(&m, msg)
+			m.state = newState
+			return m, cmd
 		}
+
+		// No specific handler found, use default handler
+		newState, cmd := handleOtherKey(&m, msg)
+		m.state = newState
+		return m, cmd
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -263,6 +435,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tickMsg:
 		// Refresh nodes list
+		// If waiting for second D, timeout and enter delete mode
+		if m.state == StateWaitingForSecondD {
+			m.state = handleEnterDeleteMode(&m)
+		}
 		return m, tea.Batch(tick(), refreshNodes(m.manager))
 
 	case nodesUpdatedMsg:
@@ -281,133 +457,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 
-	return m, nil
-}
-
-func (m model) handleDeleteMode(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		keyStr := msg.String()
-		// Check for double D press (DD) - if we just entered delete mode with D and get another D
-		if (keyStr == "d" || keyStr == "D") && (m.enteredDeleteViaD || m.lastKey == "d" || m.lastKey == "D") && len(m.nodes) > 0 {
-			// Double D: delete first active node directly
-			if err := m.manager.DeleteNode(0); err != nil {
-				m.err = err
-			} else {
-				m.nodes = m.manager.GetNodes()
-				m.err = nil
-				m.lastCommand = "delete:0" // Remember this command
-			}
-			m.deleteMode = false
-			m.selected = 0
-			m.lastKey = "" // Reset after double press
-			m.enteredDeleteViaD = false
-			m.numericInput = ""
-			return m, nil
-		}
-
-		switch keyStr {
-		case "esc":
-			m.deleteMode = false
-			m.selected = 0
-			m.err = nil
-			m.numericInput = "" // Clear numeric input buffer
-			m.lastKey = ""      // Reset last key on escape
-			m.enteredDeleteViaD = false
-			return m, nil
-
-		case "up", "k":
-			// Reset flags on navigation in delete mode
-			m.lastKey = ""
-			m.enteredDeleteViaD = false
-			if m.selected > 0 {
-				m.selected--
-			}
-			return m, nil
-
-		case "down", "j":
-			// Reset flags on navigation in delete mode
-			m.lastKey = ""
-			m.enteredDeleteViaD = false
-			if m.selected < len(m.nodes)-1 {
-				m.selected++
-			}
-			return m, nil
-
-		case "enter", " ":
-			// Reset flags on enter/space
-			m.lastKey = ""
-			m.enteredDeleteViaD = false
-			// If there's numeric input, process that first
-			if m.numericInput != "" {
-				// Parse the entire input string as an integer
-				if num, err := strconv.Atoi(m.numericInput); err == nil {
-					// Validate: 1 <= num <= len(m.nodes)
-					if num >= 1 && num <= len(m.nodes) {
-						index := num - 1 // Convert to 0-based index
-						// Store the sequence: delete mode + delete at this index
-						m.lastCommand = fmt.Sprintf("delete:%d", index)
-						if err := m.manager.DeleteNode(index); err != nil {
-							m.err = err
-						} else {
-							m.nodes = m.manager.GetNodes()
-							m.deleteMode = false
-							m.selected = 0
-							m.err = nil
-						}
-						m.numericInput = ""
-						return m, nil
-					} else {
-						m.err = fmt.Errorf("node %d does not exist (max: %d)", num, len(m.nodes))
-						m.numericInput = ""
-						return m, nil
-					}
-				} else {
-					m.err = fmt.Errorf("invalid number: %s", m.numericInput)
-					m.numericInput = ""
-					return m, nil
-				}
-			}
-			// Otherwise, delete selected node
-			selectedIndex := m.selected
-			if err := m.manager.DeleteNode(selectedIndex); err != nil {
-				m.err = err
-			} else {
-				m.nodes = m.manager.GetNodes()
-				m.deleteMode = false
-				m.selected = 0
-				m.err = nil
-				// Remember the sequence: delete mode + delete at this index
-				m.lastCommand = fmt.Sprintf("delete:%d", selectedIndex)
-			}
-			return m, nil
-
-		default:
-			// Handle numeric input (supports multi-digit numbers)
-			// Reset flags for non-D keys (but allow D to be checked above)
-			if keyStr != "d" && keyStr != "D" {
-				m.lastKey = ""
-				m.enteredDeleteViaD = false
-			}
-
-			// Check if it's a digit (0-9)
-			if len(keyStr) == 1 && keyStr >= "0" && keyStr <= "9" {
-				// Append to numeric input buffer
-				m.numericInput += keyStr
-				// Clear any previous error when typing
-				if m.err != nil && strings.Contains(m.err.Error(), "does not exist") {
-					m.err = nil
-				}
-				return m, nil
-			}
-
-			// Non-numeric key, clear the buffer
-			if m.numericInput != "" {
-				m.numericInput = ""
-			}
-			return m, nil
-		}
-	}
 	return m, nil
 }
 
@@ -438,7 +487,7 @@ func (m model) View() string {
 		s.WriteString("Running Nodes:\n\n")
 		for i, n := range m.nodes {
 			config := n.GetConfig()
-			if m.deleteMode && i == m.selected {
+			if m.state == StateDeleteSelect && i == m.selected {
 				// Highlight selected node in delete mode
 				nodeStyle := lipgloss.NewStyle().
 					PaddingLeft(2).
@@ -553,7 +602,7 @@ func (m model) View() string {
 		Italic(true).
 		PaddingTop(1)
 
-	if m.deleteMode {
+	if m.state == StateDeleteSelect {
 		var helpText string
 		if m.numericInput != "" {
 			// Build fully formatted string when numeric input is present
