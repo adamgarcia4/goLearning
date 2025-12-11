@@ -172,10 +172,6 @@ func NewGossipState(nodeID NodeID, interval time.Duration) (*GossipState, error)
 	return &GossipState{
 		nodeID:            nodeID,
 		heartbeatInterval: interval,
-		myHeartbeatState: &HeartbeatState{
-			NodeID:     nodeID,
-			Generation: time.Now().Unix(),
-			Version:    0,
-		},
+		myHeartbeatState:  NewHeartbeatState(nodeID, time.Now().Unix()),
 	}, nil
 }
