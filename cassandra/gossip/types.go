@@ -41,12 +41,6 @@ Version:
 
 type NodeID string
 
-type HeartbeatState struct {
-	NodeID     NodeID
-	Generation int64 // node start time (unix seconds)
-	Version    int64 // incremented on each heartbeat
-}
-
 type AppStateKey string
 
 const (
@@ -58,9 +52,4 @@ const (
 type AppState struct {
 	Value   string
 	Version int64
-}
-
-type EndpointState struct {
-	Heartbeat HeartbeatState
-	AppStates map[AppStateKey]AppState
 }

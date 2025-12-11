@@ -1,0 +1,71 @@
+package node
+
+import (
+	"time"
+
+	"github.com/adamgarcia4/goLearning/cassandra/gossip"
+)
+
+// Default configuration constants
+const (
+	DefaultAddress     = "127.0.0.1"
+	DefaultPort        = "50051"
+	DefaultNodeID      = "node-1"
+	DefaultTarget      = "127.0.0.1:50051"
+	DefaultClientMode  = false
+)
+
+// Config holds the configuration for a node
+type Config struct {
+	// Node identification
+	NodeID gossip.NodeID
+
+	// Server configuration
+	Address string
+	Port    string
+
+	// Client configuration (optional)
+	ClientMode   bool
+	TargetServer string
+
+	// Gossip configuration
+	HeartbeatInterval time.Duration
+}
+
+// DefaultConfig returns a config with sensible defaults
+func DefaultConfig(nodeID gossip.NodeID) *Config {
+	return &Config{
+		NodeID:            nodeID,
+		Address:           DefaultAddress,
+		Port:              DefaultPort,
+		ClientMode:        DefaultClientMode,
+		TargetServer:      DefaultTarget,
+		HeartbeatInterval: 5 * time.Second,
+	}
+}
+
+// Validate checks if the config is valid
+func (c *Config) Validate() error {
+	if c.NodeID == "" {
+		return ErrNodeIDRequired
+	}
+	if c.Address == "" {
+		return ErrAddressRequired
+	}
+	if c.Port == "" {
+		return ErrPortRequired
+	}
+	if c.HeartbeatInterval <= 0 {
+		return ErrInvalidHeartbeatInterval
+	}
+	if c.ClientMode && c.TargetServer == "" {
+		return ErrTargetServerRequired
+	}
+	return nil
+}
+
+// GetAddress returns the full address (address:port)
+func (c *Config) GetAddress() string {
+	return c.Address + ":" + c.Port
+}
+
