@@ -370,6 +370,7 @@ var keyHandlers = map[State]map[string]keyHandler{
 		"d":      handleFirstD,
 		"D":      handleFirstD,
 		"q":      handleQuit,
+		"Q":      handleQuit,
 		"ctrl+c": handleQuit,
 		"enter":  handleEnter,
 		"up":     handleUp,
