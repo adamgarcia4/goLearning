@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 
+	"github.com/adamgarcia4/goLearning/cassandra/logger"
 	"github.com/adamgarcia4/goLearning/cassandra/node"
 )
 
@@ -38,19 +39,24 @@ type model struct {
 	deleteMode bool
 	selected   int
 	err        error
-	logBuffer  *node.LogBuffer
+	logBuffer  *logger.LogBuffer
 	logScroll  int // for scrolling logs
 	width      int
 	height     int
 }
 
 func initialModel() model {
+	// Initialize logger for interactive mode (no stdout, only log buffer)
+	logBuffer := logger.GetGlobalLogBuffer()
+	logger.Init("", false) // No prefix, no stdout
+	logger.AddOutput(logger.NewLogBufferWriter(logBuffer))
+	
 	return model{
 		manager:    node.NewManager(),
 		nodes:      []*node.Node{},
 		deleteMode: false,
 		selected:   0,
-		logBuffer:  node.GetGlobalLogBuffer(),
+		logBuffer:  logBuffer,
 		logScroll:  0,
 	}
 }
@@ -270,7 +276,7 @@ func (m model) View() string {
 			start = 0
 		}
 		for i := len(logEntries) - 1; i >= start; i-- {
-			logLines = append(logLines, node.FormatLogEntry(logEntries[i]))
+			logLines = append(logLines, logger.FormatLogEntry(logEntries[i]))
 		}
 	}
 

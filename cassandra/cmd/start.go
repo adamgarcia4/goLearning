@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/adamgarcia4/goLearning/cassandra/gossip"
+	"github.com/adamgarcia4/goLearning/cassandra/logger"
 	"github.com/adamgarcia4/goLearning/cassandra/node"
 )
 
@@ -46,9 +47,12 @@ func init() {
 }
 
 func runStart(cmd *cobra.Command, args []string) {
+	// Initialize logger for non-interactive mode (write to stdout)
+	logger.Init("", true) // No prefix, write to stdout
+	
 	// Create node configuration with defaults
 	config := node.DefaultConfig(gossip.NodeID(nodeID))
-
+	
 	// Override with CLI flags
 	config.Address = address
 	config.Port = port

@@ -3,8 +3,9 @@ package gossip
 import (
 	"context"
 	"fmt"
-	"log"
 	"time"
+
+	"github.com/adamgarcia4/goLearning/cassandra/logger"
 )
 
 /**
@@ -121,7 +122,7 @@ func (g *GossipState) SendHeartbeat(sendHeartbeat HeartbeatSender) (string, int6
 func (g *GossipState) InitializeHeartbeatSending(ctx context.Context, sendHeartbeat HeartbeatSender) {
 	ticker := time.NewTicker(g.heartbeatInterval)
 	defer ticker.Stop()
-	log.Printf("Node %s: Starting to send heartbeats every %v\n", g.nodeID, g.heartbeatInterval)
+	logger.Printf("Node %s: Starting to send heartbeats every %v", string(g.nodeID), g.heartbeatInterval)
 
 	for {
 		select {
@@ -130,7 +131,7 @@ func (g *GossipState) InitializeHeartbeatSending(ctx context.Context, sendHeartb
 		case <-ticker.C:
 			_, _, err := g.SendHeartbeat(sendHeartbeat)
 			if err != nil {
-				log.Printf("Node %s: Failed to send heartbeat: %v\n", g.nodeID, err)
+				logger.Printf("Node %s: Failed to send heartbeat: %v", string(g.nodeID), err)
 			}
 		}
 	}

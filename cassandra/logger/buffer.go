@@ -1,9 +1,7 @@
-package node
+package logger
 
 import (
-	"bytes"
 	"fmt"
-	"io"
 	"sync"
 	"time"
 )
@@ -76,62 +74,6 @@ func (lb *LogBuffer) GetAll() []LogEntry {
 	result := make([]LogEntry, len(lb.entries))
 	copy(result, lb.entries)
 	return result
-}
-
-// LogWriter is an io.Writer that writes to a LogBuffer
-type LogWriter struct {
-	buffer *LogBuffer
-	nodeID string
-	buf    bytes.Buffer
-	mu     sync.Mutex
-}
-
-// NewLogWriter creates a new log writer for a specific node
-func NewLogWriter(buffer *LogBuffer, nodeID string) *LogWriter {
-	return &LogWriter{
-		buffer: buffer,
-		nodeID: nodeID,
-	}
-}
-
-// Write implements io.Writer
-func (lw *LogWriter) Write(p []byte) (n int, err error) {
-	lw.mu.Lock()
-	defer lw.mu.Unlock()
-
-	// Buffer until we get a newline
-	lw.buf.Write(p)
-
-	// Process complete lines
-	for {
-		line, err := lw.buf.ReadString('\n')
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return len(p), err
-		}
-
-		// Remove newline and add to log buffer
-		line = line[:len(line)-1]
-		if len(line) > 0 {
-			lw.buffer.Add(lw.nodeID, line)
-		}
-	}
-
-	return len(p), nil
-}
-
-// Global log buffer instance
-var globalLogBuffer *LogBuffer
-var logBufferOnce sync.Once
-
-// GetGlobalLogBuffer returns the global log buffer
-func GetGlobalLogBuffer() *LogBuffer {
-	logBufferOnce.Do(func() {
-		globalLogBuffer = NewLogBuffer(1000) // Keep last 1000 log entries
-	})
-	return globalLogBuffer
 }
 
 // FormatLogEntry formats a log entry for display

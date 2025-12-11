@@ -3,7 +3,6 @@ package node
 import (
 	"context"
 	"fmt"
-	"log"
 	"sync"
 
 	"google.golang.org/grpc"
@@ -11,6 +10,7 @@ import (
 
 	pbproto "github.com/adamgarcia4/goLearning/cassandra/api/gossip/v1"
 	"github.com/adamgarcia4/goLearning/cassandra/gossip"
+	"github.com/adamgarcia4/goLearning/cassandra/logger"
 	"github.com/adamgarcia4/goLearning/cassandra/transport"
 )
 
@@ -172,10 +172,9 @@ func (n *Node) startClient() error {
 	return nil
 }
 
-// logf logs to both standard logger and log buffer
+// logf logs using the global logger (which handles both stdout and log buffer)
 func (n *Node) logf(format string, args ...interface{}) {
-	msg := fmt.Sprintf(format, args...)
-	log.Printf(msg)
-	GetGlobalLogBuffer().Add(string(n.config.NodeID), msg)
+	// Use logger with node ID as prefix
+	logger.Printf("[%s] %s", string(n.config.NodeID), fmt.Sprintf(format, args...))
 }
 
