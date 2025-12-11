@@ -49,8 +49,14 @@ func (c *Config) Validate() error {
 	if c.NodeID == "" {
 		return ErrNodeIDRequired
 	}
+	if c.Address == "" {
+		return ErrAddressRequired
+	}
 	if c.Port == "" {
 		return ErrPortRequired
+	}
+	if c.HeartbeatInterval <= 0 {
+		return ErrInvalidHeartbeatInterval
 	}
 	if c.ClientMode && c.TargetServer == "" {
 		return ErrTargetServerRequired
