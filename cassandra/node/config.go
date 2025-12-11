@@ -6,6 +6,15 @@ import (
 	"github.com/adamgarcia4/goLearning/cassandra/gossip"
 )
 
+// Default configuration constants
+const (
+	DefaultAddress     = "127.0.0.1"
+	DefaultPort        = "50051"
+	DefaultNodeID      = "node-1"
+	DefaultTarget      = "127.0.0.1:50051"
+	DefaultClientMode  = false
+)
+
 // Config holds the configuration for a node
 type Config struct {
 	// Node identification
@@ -27,10 +36,10 @@ type Config struct {
 func DefaultConfig(nodeID gossip.NodeID) *Config {
 	return &Config{
 		NodeID:            nodeID,
-		Address:           "127.0.0.1",
-		Port:              "50051",
-		ClientMode:        false,
-		TargetServer:      "127.0.0.1:50051",
+		Address:           DefaultAddress,
+		Port:              DefaultPort,
+		ClientMode:        DefaultClientMode,
+		TargetServer:      DefaultTarget,
 		HeartbeatInterval: 5 * time.Second,
 	}
 }

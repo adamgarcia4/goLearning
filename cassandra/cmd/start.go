@@ -37,22 +37,22 @@ func init() {
 	rootCmd.AddCommand(startCmd)
 
 	// Server flags
-	startCmd.Flags().StringVarP(&address, "address", "a", "127.0.0.1", "Address to bind the server to")
-	startCmd.Flags().StringVarP(&port, "port", "p", "50051", "Port to bind the server to")
-	startCmd.Flags().StringVarP(&nodeID, "node-id", "n", "node-1", "Unique node identifier")
+	startCmd.Flags().StringVarP(&address, "address", "a", node.DefaultAddress, "Address to bind the server to")
+	startCmd.Flags().StringVarP(&port, "port", "p", node.DefaultPort, "Port to bind the server to")
+	startCmd.Flags().StringVarP(&nodeID, "node-id", "n", node.DefaultNodeID, "Unique node identifier")
 
 	// Client flags
-	startCmd.Flags().BoolVarP(&clientMode, "client", "c", false, "Run in client mode (send heartbeats)")
-	startCmd.Flags().StringVarP(&targetServer, "target", "t", "127.0.0.1:50051", "Target server address (required in client mode)")
+	startCmd.Flags().BoolVarP(&clientMode, "client", "c", node.DefaultClientMode, "Run in client mode (send heartbeats)")
+	startCmd.Flags().StringVarP(&targetServer, "target", "t", node.DefaultTarget, "Target server address (required in client mode)")
 }
 
 func runStart(cmd *cobra.Command, args []string) {
 	// Initialize logger for non-interactive mode (write to stdout)
 	logger.Init("", true) // No prefix, write to stdout
-	
+
 	// Create node configuration with defaults
 	config := node.DefaultConfig(gossip.NodeID(nodeID))
-	
+
 	// Override with CLI flags
 	config.Address = address
 	config.Port = port
