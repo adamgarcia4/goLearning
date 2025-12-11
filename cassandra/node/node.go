@@ -30,6 +30,10 @@ type Node struct {
 
 // New creates a new node with the given configuration
 func New(config *Config) (*Node, error) {
+	if config == nil {
+		return nil, fmt.Errorf("config is required")
+	}
+
 	if err := config.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid config: %w", err)
 	}
