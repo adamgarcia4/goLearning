@@ -129,16 +129,16 @@ func (n *Node) startServer() error {
 
 	n.grpcServer = grpcTransport
 
-	// Start server in a goroutine
-	n.wg.Add(1)
-	go func() {
-		defer n.wg.Done()
-		n.logf("gRPC server starting on %s (node-id: %s)", n.config.GetAddress(), n.config.NodeID)
-		if err := grpcTransport.Start(); err != nil {
-			n.logf("gRPC server error: %v", err)
-		}
-	}()
+	n.logf("gRPC server starting on %s (node-id: %s)", n.config.GetAddress(), n.config.NodeID)
 
+	// Start() performs binding synchronously and returns an error immediately if binding fails.
+	// If binding succeeds, it spawns Serve in a goroutine and returns nil.
+	// This ensures that binding errors (e.g., port already in use) are surfaced synchronously.
+	if err := grpcTransport.Start(); err != nil {
+		return fmt.Errorf("failed to bind gRPC server: %w", err)
+	}
+
+	// Binding succeeded - server is now serving in a background goroutine
 	return nil
 }
 
@@ -182,4 +182,3 @@ func (n *Node) logf(format string, args ...interface{}) {
 	// Use logger with node ID as prefix
 	logger.Printf("[%s] %s", string(n.config.NodeID), fmt.Sprintf(format, args...))
 }
-
