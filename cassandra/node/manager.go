@@ -13,6 +13,7 @@ type Manager struct {
 	nodeMap     map[string]int // map node ID to index for quick lookup
 	mu          sync.RWMutex
 	portCounter int // for auto-assigning ports
+	nextID      int // monotonically increasing counter for unique node IDs
 }
 
 // NewManager creates a new node manager
@@ -21,6 +22,7 @@ func NewManager() *Manager {
 		nodes:       make([]*Node, 0),
 		nodeMap:     make(map[string]int),
 		portCounter: 50051, // start from default port
+		nextID:      1,     // start node IDs at 1
 	}
 }
 
@@ -31,7 +33,10 @@ func (m *Manager) CreateNode() (*Node, error) {
 
 	// Find next available port
 	port := m.findAvailablePort()
-	nodeID := gossip.NodeID(fmt.Sprintf("node-%d", len(m.nodes)+1))
+	
+	// Generate unique node ID using monotonically increasing counter
+	nodeID := gossip.NodeID(fmt.Sprintf("node-%d", m.nextID))
+	m.nextID++ // increment counter for next node
 
 	config := DefaultConfig(nodeID)
 	config.Port = fmt.Sprintf("%d", port)
