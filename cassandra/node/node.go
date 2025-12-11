@@ -69,6 +69,11 @@ func (n *Node) Start() error {
 
 	// Always start the server
 	if err := n.startServer(); err != nil {
+		// Clean up client connection if it was started
+		if n.clientConn != nil {
+			n.clientConn.Close()
+			n.clientConn = nil
+		}
 		return fmt.Errorf("failed to start server: %w", err)
 	}
 
@@ -82,10 +87,12 @@ func (n *Node) Stop() error {
 	nodeID := n.config.NodeID
 	grpcServer := n.grpcServer
 	clientConn := n.clientConn
-	
+
 	// Cancel context to stop all goroutines (heartbeat sending, etc.)
 	n.cancel()
 	n.mu.Unlock()
+
+	var errs []error
 
 	n.logf("Stopping node %s...", nodeID)
 
@@ -94,6 +101,7 @@ func (n *Node) Stop() error {
 	if grpcServer != nil {
 		if err := grpcServer.Stop(); err != nil {
 			n.logf("Error stopping gRPC server: %v", err)
+			errs = append(errs, fmt.Errorf("failed to stop gRPC server: %w", err))
 		}
 	}
 
@@ -102,10 +110,16 @@ func (n *Node) Stop() error {
 	if clientConn != nil {
 		if err := clientConn.Close(); err != nil {
 			n.logf("Error closing client connection: %v", err)
+			errs = append(errs, fmt.Errorf("failed to close client connection: %w", err))
 		}
 	}
 
 	n.logf("Node %s stopped", nodeID)
+
+	if len(errs) > 0 {
+		return fmt.Errorf("stop encountered %d error(s): %v", len(errs), errs)
+	}
+
 	return nil
 }
 
