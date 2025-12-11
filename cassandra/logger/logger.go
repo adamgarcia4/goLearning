@@ -137,6 +137,26 @@ func Println(v ...interface{}) {
 	Printf("%s", fmt.Sprintln(v...))
 }
 
+// Infof logs an info-level formatted message
+func Infof(format string, v ...interface{}) {
+	Printf("[INFO] "+format, v...)
+}
+
+// Info logs an info-level message
+func Info(v ...interface{}) {
+	Printf("[INFO] %s", fmt.Sprint(v...))
+}
+
+// Errorf logs an error-level formatted message
+func Errorf(format string, v ...interface{}) {
+	Printf("[ERROR] "+format, v...)
+}
+
+// Error logs an error-level message
+func Error(v ...interface{}) {
+	Printf("[ERROR] %s", fmt.Sprint(v...))
+}
+
 // GetGlobalLogger returns the global logger instance (for testing/debugging)
 func GetGlobalLogger() *Logger {
 	return globalLogger

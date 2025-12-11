@@ -77,8 +77,8 @@ func runStart(cmd *cobra.Command, args []string) {
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	<-sigChan
 
-	log.Println("Shutting down...")
+	logger.Info("Shutting down...")
 	if err := n.Stop(); err != nil {
-		log.Printf("Error during shutdown: %v", err)
+		logger.Errorf("Error during shutdown: %v", err)
 	}
 }
