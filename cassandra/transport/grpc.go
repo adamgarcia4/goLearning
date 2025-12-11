@@ -97,6 +97,14 @@ func (g *GRPC) Stop() error {
 	return g.stopErr
 }
 
+// ServeErrors returns a receive-only channel that receives errors from the gRPC server's Serve() method.
+// Callers should read from this channel to detect post-bind Serve() failures that occur after Start() returns successfully.
+// The channel is buffered and initialized when the server is created, so it's safe to call this method
+// even before Start() is called. Errors are sent non-blocking, so if the channel is full, subsequent errors may be dropped.
+func (g *GRPC) ServeErrors() <-chan error {
+	return g.serveErrCh
+}
+
 func NewGRPC(addr string, nodeID string, gossipHandler GossipHandler) (*GRPC, error) {
 	if addr == "" || !strings.Contains(addr, ":") {
 		return nil, fmt.Errorf("invalid address: %s", addr)
