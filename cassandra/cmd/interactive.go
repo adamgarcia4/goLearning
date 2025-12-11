@@ -87,26 +87,25 @@ type nodesUpdatedMsg struct {
 
 type quitMsg struct{}
 
+type shutdownCompleteMsg struct {
+	err error
+}
+
+// shutdownNodes stops all nodes and sends a message when complete
+func shutdownNodes(manager *node.Manager) tea.Cmd {
+	return func() tea.Msg {
+		err := manager.StopAll()
+		return shutdownCompleteMsg{err: err}
+	}
+}
+
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		// Handle quit
 		if msg.String() == "q" || msg.String() == "ctrl+c" {
-			// Stop all nodes gracefully
-			// Run in goroutine to avoid blocking, but wait a bit for shutdown
-			go func() {
-				if err := m.manager.StopAll(); err != nil {
-					// Log error but continue with quit
-					fmt.Printf("Error stopping nodes: %v\n", err)
-				}
-			}()
-			// Small delay to allow graceful shutdown to start
-			return m, tea.Sequence(
-				func() tea.Msg {
-					time.Sleep(200 * time.Millisecond)
-					return quitMsg{}
-				},
-			)
+			// Stop all nodes gracefully and wait for completion
+			return m, shutdownNodes(m.manager)
 		}
 
 		// Handle delete mode
@@ -224,6 +223,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case nodesUpdatedMsg:
 		m.nodes = msg.nodes
 		return m, nil
+
+	case shutdownCompleteMsg:
+		// Log any shutdown errors via the logger
+		if msg.err != nil {
+			logger.Printf("Error stopping nodes during shutdown: %v", msg.err)
+		}
+		// Now quit after shutdown is complete
+		return m, tea.Quit
 
 	case quitMsg:
 		return m, tea.Quit
