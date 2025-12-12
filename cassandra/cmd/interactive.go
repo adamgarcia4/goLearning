@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -42,6 +43,7 @@ const (
 	StateNormal State = iota
 	StateDeleteSelect
 	StateWaitingForSecondD
+	StateLogFilter
 )
 
 type model struct {
@@ -56,6 +58,14 @@ type model struct {
 	height       int
 	lastCommand  string // Track last command for repeat (Enter key)
 	numericInput string // Buffer for multi-digit numeric input in delete mode
+
+	// Log filter state
+	logFilter      map[int]bool // tracks which nodes are filtered (key: node index 0-based)
+	logFilterMode  bool         // whether filter mode is active
+	logSplitView   string       // "none", "columns", or "rows"
+	logFilterInput string       // buffer for numeric input in filter mode
+	hiddenNodes    map[int]bool // tracks which nodes are hidden in split view (key: node index 0-based)
+	splitInput     string       // buffer for numeric input in split view mode
 }
 
 func initialModel() model {
@@ -68,13 +78,19 @@ func initialModel() model {
 	}
 
 	return model{
-		manager:      node.NewManager(),
-		nodes:        []*node.Node{},
-		state:        StateNormal,
-		selected:     0,
-		logBuffer:    logBuffer,
-		logScroll:    0,
-		numericInput: "",
+		manager:        node.NewManager(),
+		nodes:          []*node.Node{},
+		state:          StateNormal,
+		selected:       0,
+		logBuffer:      logBuffer,
+		logScroll:      0,
+		numericInput:   "",
+		logFilter:      make(map[int]bool),
+		logFilterMode:  false,
+		logSplitView:   "none",
+		logFilterInput: "",
+		hiddenNodes:    make(map[int]bool),
+		splitInput:     "",
 	}
 }
 
@@ -284,6 +300,26 @@ func handleEnter(m *model, msg tea.KeyMsg) (State, tea.Cmd) {
 		}
 		return result.state, nil
 	}
+	if m.state == StateLogFilter {
+		// Confirm filter and return to normal mode
+		// Check if any filter is active
+		hasFilter := false
+		for _, v := range m.logFilter {
+			if v {
+				hasFilter = true
+				break
+			}
+		}
+		if !hasFilter {
+			// No filter active, show all
+			m.logFilterMode = false
+			m.logFilter = make(map[int]bool)
+		} else {
+			m.logFilterMode = true
+		}
+		m.logFilterInput = ""
+		return StateNormal, nil
+	}
 	// In normal mode, repeat last command
 	result := handleRepeatLastCommand(m)
 	m.err = result.err
@@ -307,6 +343,13 @@ func handleEscape(m *model, msg tea.KeyMsg) (State, tea.Cmd) {
 		return handleCancelDelete(m), nil
 	}
 	if m.state == StateWaitingForSecondD {
+		return StateNormal, nil
+	}
+	if m.state == StateLogFilter {
+		// Cancel filter mode, reset filter
+		m.logFilterInput = ""
+		m.selected = 0
+		m.err = nil
 		return StateNormal, nil
 	}
 	return m.state, nil
@@ -346,6 +389,94 @@ func handleNumeric(m *model, msg tea.KeyMsg) (State, tea.Cmd) {
 		}
 		return m.state, nil
 	}
+	if m.state == StateLogFilter {
+		keyStr := msg.String()
+		m.logFilterInput += keyStr
+		// Try to parse the current input and toggle the node immediately
+		if num, err := strconv.Atoi(m.logFilterInput); err == nil {
+			if num >= 1 && num <= len(m.nodes) {
+				index := num - 1
+				m.logFilter[index] = !m.logFilter[index]
+				m.logFilterMode = true
+				m.logFilterInput = "" // Clear input after toggling
+				m.err = nil
+				// Stay in filter mode to allow selecting more nodes
+				return m.state, nil
+			}
+			// Number is too large, keep the input for now
+		}
+		if m.err != nil && strings.Contains(m.err.Error(), "does not exist") {
+			m.err = nil
+		}
+		return m.state, nil
+	}
+	// Handle numeric input in split view mode (columns or rows)
+	if m.logSplitView == "columns" || m.logSplitView == "rows" {
+		keyStr := msg.String()
+		m.splitInput += keyStr
+		// Try to parse the current input and toggle the node visibility
+		if num, err := strconv.Atoi(m.splitInput); err == nil {
+			if num >= 1 && num <= len(m.nodes) {
+				index := num - 1
+				// Toggle visibility: if hidden, show it; if shown, hide it
+				m.hiddenNodes[index] = !m.hiddenNodes[index]
+				m.splitInput = "" // Clear input after toggling
+				m.err = nil
+				return m.state, nil
+			}
+			// Number is too large, keep the input for now
+		}
+		if m.err != nil && strings.Contains(m.err.Error(), "does not exist") {
+			m.err = nil
+		}
+		return m.state, nil
+	}
+	return m.state, nil
+}
+
+// handleLogFilterKey handles L key (enter log filter mode)
+func handleLogFilterKey(m *model, msg tea.KeyMsg) (State, tea.Cmd) {
+	if len(m.nodes) == 0 {
+		m.err = fmt.Errorf("no nodes to filter")
+		return m.state, nil
+	}
+	m.logFilterInput = ""
+	m.selected = 0
+	return StateLogFilter, nil
+}
+
+// handleSplitViewKey handles S key (toggle split view)
+func handleSplitViewKey(m *model, msg tea.KeyMsg) (State, tea.Cmd) {
+	switch m.logSplitView {
+	case "none":
+		m.logSplitView = "colored"
+	case "colored":
+		m.logSplitView = "columns"
+	case "columns":
+		m.logSplitView = "rows"
+	case "rows":
+		m.logSplitView = "none"
+	}
+	// Clear hidden nodes and split input when exiting split view
+	if m.logSplitView == "none" || m.logSplitView == "colored" {
+		m.hiddenNodes = make(map[int]bool)
+		m.splitInput = ""
+	}
+	return m.state, nil
+}
+
+// handleFilterAllKey handles A key in filter mode (select all nodes)
+func handleFilterAllKey(m *model, msg tea.KeyMsg) (State, tea.Cmd) {
+	if m.state == StateLogFilter {
+		// Select all nodes
+		m.logFilter = make(map[int]bool)
+		for i := 0; i < len(m.nodes); i++ {
+			m.logFilter[i] = true
+		}
+		m.logFilterMode = true
+		m.logFilterInput = ""
+		return StateNormal, nil
+	}
 	return m.state, nil
 }
 
@@ -359,6 +490,20 @@ func handleOtherKey(m *model, msg tea.KeyMsg) (State, tea.Cmd) {
 		// Clear numeric input on non-numeric keys
 		m.numericInput = ""
 	}
+	if m.state == StateLogFilter {
+		// Clear filter input on non-numeric keys (except A)
+		if msg.String() != "a" && msg.String() != "A" {
+			m.logFilterInput = ""
+		}
+	}
+	// Clear split input on non-numeric keys when in split view
+	if (m.logSplitView == "columns" || m.logSplitView == "rows") && m.state == StateNormal {
+		// Only clear if it's not a numeric key (numeric keys are handled by handleNumeric)
+		keyStr := msg.String()
+		if keyStr < "0" || keyStr > "9" {
+			m.splitInput = ""
+		}
+	}
 	return m.state, nil
 }
 
@@ -369,6 +514,10 @@ var keyHandlers = map[State]map[string]keyHandler{
 		"C":      handleCreateNodeKey,
 		"d":      handleFirstD,
 		"D":      handleFirstD,
+		"l":      handleLogFilterKey,
+		"L":      handleLogFilterKey,
+		"s":      handleSplitViewKey,
+		"S":      handleSplitViewKey,
 		"q":      handleQuit,
 		"Q":      handleQuit,
 		"ctrl+c": handleQuit,
@@ -377,6 +526,16 @@ var keyHandlers = map[State]map[string]keyHandler{
 		"k":      handleUp,
 		"down":   handleDown,
 		"j":      handleDown,
+		"0":      handleNumeric,
+		"1":      handleNumeric,
+		"2":      handleNumeric,
+		"3":      handleNumeric,
+		"4":      handleNumeric,
+		"5":      handleNumeric,
+		"6":      handleNumeric,
+		"7":      handleNumeric,
+		"8":      handleNumeric,
+		"9":      handleNumeric,
 	},
 	StateWaitingForSecondD: {
 		"d":     handleFirstD,
@@ -392,6 +551,22 @@ var keyHandlers = map[State]map[string]keyHandler{
 		"k":     handleUp,
 		"down":  handleDown,
 		"j":     handleDown,
+		"0":     handleNumeric,
+		"1":     handleNumeric,
+		"2":     handleNumeric,
+		"3":     handleNumeric,
+		"4":     handleNumeric,
+		"5":     handleNumeric,
+		"6":     handleNumeric,
+		"7":     handleNumeric,
+		"8":     handleNumeric,
+		"9":     handleNumeric,
+	},
+	StateLogFilter: {
+		"esc":   handleEscape,
+		"enter": handleEnter,
+		"a":     handleFilterAllKey,
+		"A":     handleFilterAllKey,
 		"0":     handleNumeric,
 		"1":     handleNumeric,
 		"2":     handleNumeric,
@@ -461,6 +636,325 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// getNodeColor returns a lipgloss color for a given node index
+func getNodeColor(nodeIndex int) lipgloss.Color {
+	colors := []string{"39", "46", "226", "201", "51"} // Blue, Green, Yellow, Magenta, Cyan
+	return lipgloss.Color(colors[nodeIndex%len(colors)])
+}
+
+// getNodeIndexByID returns the node index for a given NodeID string, or -1 if not found
+func (m *model) getNodeIndexByID(nodeID string) int {
+	for i, n := range m.nodes {
+		if string(n.GetConfig().NodeID) == nodeID {
+			return i
+		}
+	}
+	return -1
+}
+
+// shouldShowLogEntry determines if a log entry should be shown based on the current filter
+func (m *model) shouldShowLogEntry(entry logger.LogEntry) bool {
+	if !m.logFilterMode {
+		return true // Show all if filter mode is not active
+	}
+
+	// If no nodes are filtered, show all
+	hasFilter := false
+	for _, v := range m.logFilter {
+		if v {
+			hasFilter = true
+			break
+		}
+	}
+	if !hasFilter {
+		return true
+	}
+
+	// Find node index for this log entry
+	nodeIndex := m.getNodeIndexByID(entry.NodeID)
+	if nodeIndex == -1 {
+		// Node doesn't exist anymore, show it if filter mode is off or if we're showing all
+		return !m.logFilterMode
+	}
+
+	// Check if this node is in the filter
+	return m.logFilter[nodeIndex]
+}
+
+// getLogEntryColor returns the color for a log entry based on its node
+func (m *model) getLogEntryColor(entry logger.LogEntry) lipgloss.Color {
+	// Apply colors if in filter mode or colored split view
+	if !m.logFilterMode && m.logSplitView != "colored" {
+		return lipgloss.Color("") // No color in normal mode
+	}
+
+	nodeIndex := m.getNodeIndexByID(entry.NodeID)
+	if nodeIndex == -1 {
+		return lipgloss.Color("") // No color for unknown nodes
+	}
+
+	return getNodeColor(nodeIndex)
+}
+
+// getNodesToDisplay returns the list of node indices to display in split view
+func (m *model) getNodesToDisplay() []int {
+	var nodeIndices []int
+
+	if m.logFilterMode {
+		// Show only filtered nodes
+		for i := range m.nodes {
+			if m.logFilter[i] {
+				nodeIndices = append(nodeIndices, i)
+			}
+		}
+		// If no filter is active, show all
+		if len(nodeIndices) == 0 {
+			for i := range m.nodes {
+				nodeIndices = append(nodeIndices, i)
+			}
+		}
+	} else {
+		// Show all nodes
+		for i := range m.nodes {
+			nodeIndices = append(nodeIndices, i)
+		}
+	}
+
+	// Filter out hidden nodes if in split view
+	if m.logSplitView == "columns" || m.logSplitView == "rows" {
+		var visibleIndices []int
+		for _, idx := range nodeIndices {
+			if !m.hiddenNodes[idx] {
+				visibleIndices = append(visibleIndices, idx)
+			}
+		}
+		// If all nodes are hidden, show all (don't allow complete hiding)
+		if len(visibleIndices) == 0 {
+			return nodeIndices
+		}
+		return visibleIndices
+	}
+
+	return nodeIndices
+}
+
+// wrapText wraps text to a given width, preserving ANSI escape codes
+func wrapText(text string, width int) []string {
+	if width <= 0 {
+		return []string{text}
+	}
+
+	// Use lipgloss's word wrap functionality
+	// First, we need to strip ANSI codes to measure width, then reapply them
+	// For simplicity, we'll use a character-based approach that preserves ANSI codes
+
+	var lines []string
+	var currentLine strings.Builder
+	currentWidth := 0
+	inEscape := false
+	escapeSeq := strings.Builder{}
+
+	for i := 0; i < len(text); {
+		r, size := utf8.DecodeRuneInString(text[i:])
+
+		if r == '\x1b' {
+			inEscape = true
+			escapeSeq.Reset()
+			escapeSeq.WriteRune(r)
+			currentLine.WriteRune(r)
+			i += size
+			continue
+		}
+
+		if inEscape {
+			escapeSeq.WriteRune(r)
+			currentLine.WriteRune(r)
+			// ANSI escape sequence ends with a letter
+			if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') {
+				inEscape = false
+			}
+			i += size
+			continue
+		}
+
+		// Calculate rune width (most runes are 1, some wide characters are 2)
+		runeWidth := 1
+		if r > 127 {
+			// Check if it's a wide character (CJK, emoji, etc.)
+			// Simple heuristic: if it's not ASCII, it might be wide
+			// For better accuracy, we'd need a proper Unicode width library
+			if r > 0x1100 { // Approximate threshold for wide characters
+				runeWidth = 2
+			}
+		}
+
+		// Check if we need to wrap
+		if currentWidth+runeWidth > width && currentLine.Len() > 0 {
+			lines = append(lines, currentLine.String())
+			currentLine.Reset()
+			currentWidth = 0
+		}
+
+		currentLine.WriteRune(r)
+		currentWidth += runeWidth
+		i += size
+	}
+
+	if currentLine.Len() > 0 {
+		lines = append(lines, currentLine.String())
+	}
+
+	if len(lines) == 0 {
+		return []string{text}
+	}
+
+	return lines
+}
+
+// renderLogPanel renders a single log panel for a specific node
+func (m *model) renderLogPanel(nodeIndex int, width int, height int, isColumnMode bool) string {
+	allEntries := m.logBuffer.GetAll()
+	totalCount := len(allEntries)
+
+	logCount := height - 2 // Reserve space for title and border
+	if logCount < 1 {
+		logCount = 1
+	}
+
+	var logLines []string
+	if totalCount == 0 {
+		logLines = []string{"(no logs yet)"}
+	} else {
+		nodeID := string(m.nodes[nodeIndex].GetConfig().NodeID)
+		color := getNodeColor(nodeIndex)
+
+		// Collect all entries for this specific node
+		var nodeEntries []logger.LogEntry
+
+		for _, entry := range allEntries {
+			if entry.NodeID == nodeID {
+				nodeEntries = append(nodeEntries, entry)
+			}
+		}
+
+		// Show the most recent logCount entries for this node
+		start := 0
+		if len(nodeEntries) > logCount {
+			start = len(nodeEntries) - logCount
+		}
+
+		// Calculate local line numbers (0 for most recent in this panel)
+		for i := len(nodeEntries) - 1; i >= start; i-- {
+			entry := nodeEntries[i]
+			// Local line number: most recent entry in this panel = 0
+			// We show entries in reverse order (newest first), so line 0 is the first one shown
+			localLineNumber := len(nodeEntries) - 1 - i - start
+			if localLineNumber < 0 {
+				localLineNumber = 0
+			}
+			lineNum := fmt.Sprintf("%4d", localLineNumber)
+			formattedEntry := logger.FormatLogEntry(entry)
+
+			// Apply color
+			if m.logFilterMode {
+				colorStyle := lipgloss.NewStyle().Foreground(color)
+				formattedEntry = colorStyle.Render(formattedEntry)
+			}
+
+			// Wrap text in column mode, truncate in row mode
+			maxLen := width - 10 // Reserve space for line number and padding
+			if isColumnMode {
+				// Wrap text for column mode
+				wrappedLines := wrapText(formattedEntry, maxLen)
+				for i, wrappedLine := range wrappedLines {
+					if i == 0 {
+						logLines = append(logLines, fmt.Sprintf("%s | %s", lineNum, wrappedLine))
+					} else {
+						// Continuation lines without line number
+						logLines = append(logLines, fmt.Sprintf("     | %s", wrappedLine))
+					}
+				}
+			} else {
+				// Truncate for row mode (rows have more width, but we still truncate for safety)
+				if len(formattedEntry) > maxLen {
+					formattedEntry = formattedEntry[:maxLen-3] + "..."
+				}
+				logLines = append(logLines, fmt.Sprintf("%s | %s", lineNum, formattedEntry))
+			}
+		}
+
+		if len(logLines) == 0 {
+			logLines = []string{"(no logs for this node)"}
+		}
+	}
+
+	nodeID := string(m.nodes[nodeIndex].GetConfig().NodeID)
+	title := fmt.Sprintf("Node %d (%s)", nodeIndex+1, nodeID)
+
+	content := title + "\n" + strings.Join(logLines, "\n")
+
+	boxStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(getNodeColor(nodeIndex)).
+		Padding(0, 1).
+		Height(height).
+		Width(width)
+
+	return boxStyle.Render(content)
+}
+
+// renderSplitView renders logs in columns or rows layout
+func (m *model) renderSplitView() string {
+	nodeIndices := m.getNodesToDisplay()
+
+	if len(nodeIndices) == 0 {
+		return "(no nodes to display)"
+	}
+
+	// Limit to reasonable number of panels
+	maxPanels := 4
+	if len(nodeIndices) > maxPanels {
+		nodeIndices = nodeIndices[:maxPanels]
+	}
+
+	boxWidth := 100
+	if m.width > 0 {
+		boxWidth = m.width - 4
+	}
+
+	panelHeight := 13
+
+	if m.logSplitView == "columns" {
+		// Split into columns
+		panelWidth := boxWidth / len(nodeIndices)
+		if panelWidth < 20 {
+			panelWidth = 20
+		}
+
+		var panels []string
+		for _, nodeIndex := range nodeIndices {
+			panels = append(panels, m.renderLogPanel(nodeIndex, panelWidth, panelHeight, true))
+		}
+
+		return lipgloss.JoinHorizontal(lipgloss.Top, panels...)
+	} else if m.logSplitView == "rows" {
+		// Split into rows
+		panelHeight = panelHeight / len(nodeIndices)
+		if panelHeight < 3 {
+			panelHeight = 3
+		}
+
+		var panels []string
+		for _, nodeIndex := range nodeIndices {
+			panels = append(panels, m.renderLogPanel(nodeIndex, boxWidth, panelHeight, false))
+		}
+
+		return lipgloss.JoinVertical(lipgloss.Left, panels...)
+	}
+
+	return ""
+}
+
 func (m model) View() string {
 	var s strings.Builder
 
@@ -488,16 +982,36 @@ func (m model) View() string {
 		s.WriteString("Running Nodes:\n\n")
 		for i, n := range m.nodes {
 			config := n.GetConfig()
+			// Check if logs are visible in split view
+			logsVisible := true
+			if m.logSplitView == "columns" || m.logSplitView == "rows" {
+				logsVisible = !m.hiddenNodes[i]
+			}
+
+			baseInfo := fmt.Sprintf("%s (port: %s)", config.NodeID, config.Port)
+			if logsVisible && (m.logSplitView == "columns" || m.logSplitView == "rows") {
+				baseInfo += " [logs enabled]"
+			}
+
 			if m.state == StateDeleteSelect && i == m.selected {
 				// Highlight selected node in delete mode
 				nodeStyle := lipgloss.NewStyle().
 					PaddingLeft(2).
 					Foreground(lipgloss.Color("196")).
 					Bold(true)
-				s.WriteString(nodeStyle.Render(fmt.Sprintf("[%d] > %s (port: %s)", i+1, config.NodeID, config.Port)))
+				s.WriteString(nodeStyle.Render(fmt.Sprintf("[%d] > %s", i+1, baseInfo)))
+				s.WriteString("\n")
+			} else if m.logFilterMode && m.logFilter[i] {
+				// Highlight filtered node with its color
+				nodeColor := getNodeColor(i)
+				nodeStyle := lipgloss.NewStyle().
+					PaddingLeft(2).
+					Foreground(nodeColor).
+					Bold(true)
+				s.WriteString(nodeStyle.Render(fmt.Sprintf("[%d] * %s", i+1, baseInfo)))
 				s.WriteString("\n")
 			} else {
-				s.WriteString(fmt.Sprintf("  [%d]   %s (port: %s)\n", i+1, config.NodeID, config.Port))
+				s.WriteString(fmt.Sprintf("  [%d]   %s\n", i+1, baseInfo))
 			}
 		}
 		s.WriteString("\n")
@@ -563,6 +1077,13 @@ func (m model) View() string {
 		// Line number: most recent (position totalCount-1) = 0
 		// So line number = totalCount - 1 - (recentStart + i)
 		for i := end - 1; i >= start; i-- {
+			entry := logEntries[i]
+
+			// Filter entries based on active filter
+			if !m.shouldShowLogEntry(entry) {
+				continue
+			}
+
 			// Calculate line number based on position in full buffer
 			positionInFullBuffer := recentStart + i
 			// Line number: most recent (position totalCount-1) = 0
@@ -574,27 +1095,44 @@ func (m model) View() string {
 
 			// Format with line number (right-aligned, 4 digits)
 			lineNum := fmt.Sprintf("%4d", lineNumber)
-			logLines = append(logLines, fmt.Sprintf("%s | %s", lineNum, logger.FormatLogEntry(logEntries[i])))
+			formattedEntry := logger.FormatLogEntry(entry)
+
+			// Apply color if in filter mode or colored split view
+			if m.logFilterMode || m.logSplitView == "colored" {
+				color := m.getLogEntryColor(entry)
+				if color != "" {
+					colorStyle := lipgloss.NewStyle().Foreground(color)
+					formattedEntry = colorStyle.Render(formattedEntry)
+				}
+			}
+
+			logLines = append(logLines, fmt.Sprintf("%s | %s", lineNum, formattedEntry))
 		}
 	}
 
-	// Create a single log box with title - use terminal width if available, otherwise default
-	boxWidth := 100
-	if m.width > 0 {
-		boxWidth = m.width - 4 // Leave some margin
+	// Check if split view is active (but not "colored" which uses unified view with colors)
+	if (m.logSplitView == "columns" || m.logSplitView == "rows") && len(m.nodes) > 0 {
+		splitViewContent := m.renderSplitView()
+		s.WriteString(splitViewContent)
+	} else {
+		// Create a single log box with title - use terminal width if available, otherwise default
+		boxWidth := 100
+		if m.width > 0 {
+			boxWidth = m.width - 4 // Leave some margin
+		}
+
+		// Combine title and content
+		logContent := "Logs:\n" + strings.Join(logLines, "\n")
+
+		logStyle := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("240")).
+			Padding(0, 1).
+			Height(13).
+			Width(boxWidth)
+
+		s.WriteString(logStyle.Render(logContent))
 	}
-
-	// Combine title and content
-	logContent := "Logs:\n" + strings.Join(logLines, "\n")
-
-	logStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("240")).
-		Padding(0, 1).
-		Height(13).
-		Width(boxWidth)
-
-	s.WriteString(logStyle.Render(logContent))
 	s.WriteString("\n\n")
 
 	// Instructions
@@ -613,8 +1151,16 @@ func (m model) View() string {
 			helpText = fmt.Sprintf("DELETE MODE: Use ↑/↓/j/k or type node number (1-%d, multi-digit supported), Enter to confirm, Esc to cancel", len(m.nodes))
 		}
 		s.WriteString(instructionsStyle.Render(helpText))
+	} else if m.state == StateLogFilter {
+		var helpText string
+		if m.logFilterInput != "" {
+			helpText = fmt.Sprintf("FILTER MODE: Type node number (current: %s) or A for all, Enter to confirm, Esc to cancel", m.logFilterInput)
+		} else {
+			helpText = fmt.Sprintf("FILTER MODE: Type node number (1-%d, multi-digit supported) or A for all, Enter to confirm, Esc to cancel", len(m.nodes))
+		}
+		s.WriteString(instructionsStyle.Render(helpText))
 	} else {
-		instructionText := "Press C to create a node | D to delete a node | DD to delete first node"
+		instructionText := "Press C to create a node | D to delete a node | DD to delete first node | L to filter logs | S to toggle split view"
 
 		// Add inline preview if there's a last command
 		if m.lastCommand != "" {
@@ -625,6 +1171,25 @@ func (m model) View() string {
 		}
 
 		instructionText += " | ↑/↓/j/k to scroll logs | Q to quit"
+
+		// Add filter status if active
+		if m.logFilterMode {
+			var filteredNodes []string
+			for i := range m.nodes {
+				if m.logFilter[i] {
+					filteredNodes = append(filteredNodes, fmt.Sprintf("%d", i+1))
+				}
+			}
+			if len(filteredNodes) > 0 {
+				instructionText += fmt.Sprintf(" | Filter: nodes %s", strings.Join(filteredNodes, ","))
+			}
+		}
+
+		// Add split view status if active
+		if m.logSplitView != "none" {
+			instructionText += fmt.Sprintf(" | Split: %s", m.logSplitView)
+		}
+
 		s.WriteString(instructionsStyle.Render(instructionText))
 	}
 
