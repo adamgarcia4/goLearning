@@ -162,6 +162,7 @@ func (g *GossipState) HandleHeartbeat(remoteNodeID string, remoteGeneration int6
 	// 3. Update local state if remote is newer
 
 	snapshot := g.myHeartbeatState.GetSnapshot()
+	logger.Printf("[%s] Processing heartbeat from %s (remote gen: %d, local gen: %d)", string(g.nodeID), remoteNodeID, remoteGeneration, snapshot.Generation)
 	return string(snapshot.NodeID), snapshot.Generation, snapshot.Version, nil
 }
 

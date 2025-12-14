@@ -76,6 +76,13 @@ func (lb *LogBuffer) GetAll() []LogEntry {
 	return result
 }
 
+// Clear removes all log entries from the buffer
+func (lb *LogBuffer) Clear() {
+	lb.mu.Lock()
+	defer lb.mu.Unlock()
+	lb.entries = make([]LogEntry, 0, lb.maxSize)
+}
+
 // FormatLogEntry formats a log entry for display
 func FormatLogEntry(entry LogEntry) string {
 	return fmt.Sprintf("[%s] %s: %s",

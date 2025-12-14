@@ -9,7 +9,7 @@ import (
 
 // Manager manages multiple nodes
 type Manager struct {
-	nodes       []*Node // maintain order with slice
+	nodes       []*Node        // maintain order with slice
 	nodeMap     map[string]int // map node ID to index for quick lookup
 	mu          sync.RWMutex
 	portCounter int // for auto-assigning ports
@@ -33,7 +33,7 @@ func (m *Manager) CreateNode() (*Node, error) {
 
 	// Find next available port
 	port := m.findAvailablePort()
-	
+
 	// Generate unique node ID using monotonically increasing counter
 	nodeID := gossip.NodeID(fmt.Sprintf("node-%d", m.nextID))
 	m.nextID++ // increment counter for next node
@@ -41,6 +41,7 @@ func (m *Manager) CreateNode() (*Node, error) {
 	config := DefaultConfig(nodeID)
 	config.Port = fmt.Sprintf("%d", port)
 	config.Address = "127.0.0.1"
+	config.ManualHeartbeat = true // Interactive nodes use manual heartbeat mode
 
 	node, err := New(config)
 	if err != nil {
@@ -61,7 +62,7 @@ func (m *Manager) CreateNode() (*Node, error) {
 // DeleteNode stops and removes a node by its index in the list
 func (m *Manager) DeleteNode(index int) error {
 	m.mu.Lock()
-	
+
 	if index < 0 || index >= len(m.nodes) {
 		m.mu.Unlock()
 		return fmt.Errorf("invalid node index: %d", index)
@@ -69,18 +70,18 @@ func (m *Manager) DeleteNode(index int) error {
 
 	node := m.nodes[index]
 	nodeID := string(node.GetConfig().NodeID)
-	
+
 	// Remove from slice and map before unlocking
 	m.nodes = append(m.nodes[:index], m.nodes[index+1:]...)
 	delete(m.nodeMap, nodeID)
-	
+
 	// Rebuild map indices
 	for i, n := range m.nodes {
 		m.nodeMap[string(n.GetConfig().NodeID)] = i
 	}
-	
+
 	m.mu.Unlock()
-	
+
 	// Stop node asynchronously to avoid blocking
 	go func() {
 		if err := node.Stop(); err != nil {
@@ -88,7 +89,7 @@ func (m *Manager) DeleteNode(index int) error {
 			fmt.Printf("Error stopping node %s: %v\n", nodeID, err)
 		}
 	}()
-	
+
 	return nil
 }
 

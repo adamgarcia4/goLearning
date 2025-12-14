@@ -21,6 +21,9 @@ type Node struct {
 	grpcServer  *transport.GRPC
 	clientConn  *grpc.ClientConn
 
+	// Manual heartbeat support
+	manualSendHeartbeat gossip.HeartbeatSender // Stored for manual heartbeat triggering
+
 	// Lifecycle management
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -62,7 +65,7 @@ func (n *Node) Start() error {
 		if err := n.startClient(); err != nil {
 			return fmt.Errorf("failed to start client: %w", err)
 		}
-		n.logf("Client mode enabled: node %s will send heartbeats to %s every %v",
+	n.logf("Node %s will send heartbeats to %s every %v",
 			n.config.NodeID, n.config.TargetServer, n.config.HeartbeatInterval)
 
 	// Always start the server
@@ -150,6 +153,7 @@ func (n *Node) startServer() error {
 // startClient starts the client that sends heartbeats
 func (n *Node) startClient() error {
 	// Create gRPC client connection
+	n.logf("Connecting to target server %s", n.config.TargetServer)
 	conn, err := grpc.NewClient(
 		n.config.TargetServer,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -163,6 +167,7 @@ func (n *Node) startClient() error {
 
 	// Create heartbeat sender function
 	sendHeartbeat := func(heartbeatState gossip.HeartbeatStateSnapshot) (string, int64, error) {
+		n.logf("Sending heartbeat to %s", n.config.TargetServer)
 		req := &pbproto.HeartbeatRequest{
 			NodeId:    string(heartbeatState.NodeID),
 			Timestamp: heartbeatState.Generation,
@@ -176,10 +181,36 @@ func (n *Node) startClient() error {
 		return resp.NodeId, resp.Timestamp, nil
 	}
 
-	// Start heartbeat sending
+	// Store for manual heartbeat mode
+	n.manualSendHeartbeat = sendHeartbeat
+
+	// Start automatic heartbeat sending only if not in manual mode
+	if !n.config.ManualHeartbeat {
 	n.gossipState.Start(n.ctx, sendHeartbeat)
+		n.logf("Automatic heartbeat sending enabled (interval: %v)", n.config.HeartbeatInterval)
+	} else {
+		n.logf("Manual heartbeat mode enabled - press 'H' to send heartbeats")
+	}
 
 	return nil
+}
+
+// SendHeartbeat manually triggers a heartbeat (only works in manual heartbeat mode)
+func (n *Node) SendHeartbeat() error {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+
+	if n.manualSendHeartbeat == nil {
+		return fmt.Errorf("heartbeat sender not initialized")
+	}
+
+	if !n.config.ManualHeartbeat {
+		return fmt.Errorf("node is not in manual heartbeat mode")
+	}
+
+	// Send heartbeat using stored sender function
+	_, _, err := n.gossipState.SendHeartbeat(n.manualSendHeartbeat)
+	return err
 }
 
 // logf logs using the global logger (which handles both stdout and log buffer)

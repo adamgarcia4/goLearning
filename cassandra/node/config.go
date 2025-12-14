@@ -28,6 +28,7 @@ type Config struct {
 
 	// Gossip configuration
 	HeartbeatInterval time.Duration
+	ManualHeartbeat   bool // If true, heartbeats are sent manually (via SendHeartbeat()) instead of on a timer
 }
 
 // DefaultConfig returns a config with sensible defaults

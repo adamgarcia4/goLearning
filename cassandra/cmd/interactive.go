@@ -25,6 +25,8 @@ Keyboard shortcuts:
   C - Create a new node
   D - Delete a node (shows selection menu)
   DD - Delete the first active node
+  H - Send heartbeats from all nodes (manual mode)
+  X - Clear all logs
   Q - Quit
 
 Examples:
@@ -153,6 +155,23 @@ func handleCreateNode(m *model) actionResult {
 	return actionResult{state: m.state, lastCommand: "create"}
 }
 
+// handleSendHeartbeat sends heartbeats from all nodes
+func handleSendHeartbeat(m *model) actionResult {
+	nodes := m.manager.GetNodes()
+	for _, n := range nodes {
+		if err := n.SendHeartbeat(); err != nil {
+			return actionResult{state: m.state, err: fmt.Errorf("failed to send heartbeat from node %s: %w", string(n.GetConfig().NodeID), err)}
+		}
+	}
+	return actionResult{state: m.state}
+}
+
+// handleClearLogs clears all log entries from the buffer
+func handleClearLogs(m *model) actionResult {
+	m.logBuffer.Clear()
+	return actionResult{state: m.state, lastCommand: "clear"}
+}
+
 // handleDeleteNode deletes a node at the given index
 func handleDeleteNode(m *model, index int) actionResult {
 	if err := m.manager.DeleteNode(index); err != nil {
@@ -225,6 +244,8 @@ func handleRepeatLastCommand(m *model) actionResult {
 		}
 	} else if m.lastCommand == "create" {
 		return handleCreateNode(m)
+	} else if m.lastCommand == "clear" {
+		return handleClearLogs(m)
 	}
 
 	return actionResult{state: m.state}
@@ -235,6 +256,23 @@ func handleRepeatLastCommand(m *model) actionResult {
 // handleCreateNodeKey handles C key press
 func handleCreateNodeKey(m *model, msg tea.KeyMsg) (State, tea.Cmd) {
 	result := handleCreateNode(m)
+	m.err = result.err
+	if result.lastCommand != "" {
+		m.lastCommand = result.lastCommand
+	}
+	return result.state, nil
+}
+
+// handleSendHeartbeatKey handles H key press
+func handleSendHeartbeatKey(m *model, msg tea.KeyMsg) (State, tea.Cmd) {
+	result := handleSendHeartbeat(m)
+	m.err = result.err
+	return result.state, nil
+}
+
+// handleClearLogsKey handles X key press
+func handleClearLogsKey(m *model, msg tea.KeyMsg) (State, tea.Cmd) {
+	result := handleClearLogs(m)
 	m.err = result.err
 	if result.lastCommand != "" {
 		m.lastCommand = result.lastCommand
@@ -514,10 +552,14 @@ var keyHandlers = map[State]map[string]keyHandler{
 		"C":      handleCreateNodeKey,
 		"d":      handleFirstD,
 		"D":      handleFirstD,
+		"h":      handleSendHeartbeatKey,
+		"H":      handleSendHeartbeatKey,
 		"l":      handleLogFilterKey,
 		"L":      handleLogFilterKey,
 		"s":      handleSplitViewKey,
 		"S":      handleSplitViewKey,
+		"x":      handleClearLogsKey,
+		"X":      handleClearLogsKey,
 		"q":      handleQuit,
 		"Q":      handleQuit,
 		"ctrl+c": handleQuit,
@@ -1160,7 +1202,7 @@ func (m model) View() string {
 		}
 		s.WriteString(instructionsStyle.Render(helpText))
 	} else {
-		instructionText := "Press C to create a node | D to delete a node | DD to delete first node | L to filter logs | S to toggle split view"
+		instructionText := "Press C to create a node | D to delete a node | DD to delete first node | H to send heartbeats | L to filter logs | S to toggle split view | X to clear logs"
 
 		// Add inline preview if there's a last command
 		if m.lastCommand != "" {
@@ -1210,6 +1252,8 @@ func formatCommandPreview(lastCommand string) string {
 		return "D → [node]"
 	} else if lastCommand == "create" {
 		return "C"
+	} else if lastCommand == "clear" {
+		return "X"
 	}
 	return lastCommand
 }
