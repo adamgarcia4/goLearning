@@ -87,7 +87,7 @@ func initialModel() model {
 		numericInput:   "",
 		logFilter:      make(map[int]bool),
 		logFilterMode:  false,
-		logSplitView:   "none",
+		logSplitView:   "columns",
 		logFilterInput: "",
 		hiddenNodes:    make(map[int]bool),
 		splitInput:     "",
