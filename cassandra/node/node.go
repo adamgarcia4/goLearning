@@ -59,13 +59,11 @@ func (n *Node) Start() error {
 	defer n.mu.Unlock()
 
 	// Start client mode if configured
-	if n.config.ClientMode {
 		if err := n.startClient(); err != nil {
 			return fmt.Errorf("failed to start client: %w", err)
 		}
 		n.logf("Client mode enabled: node %s will send heartbeats to %s every %v",
 			n.config.NodeID, n.config.TargetServer, n.config.HeartbeatInterval)
-	}
 
 	// Always start the server
 	if err := n.startServer(); err != nil {

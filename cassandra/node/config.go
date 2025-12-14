@@ -8,11 +8,10 @@ import (
 
 // Default configuration constants
 const (
-	DefaultAddress     = "127.0.0.1"
-	DefaultPort        = "50051"
-	DefaultNodeID      = "node-1"
-	DefaultTarget      = "127.0.0.1:50051"
-	DefaultClientMode  = false
+	DefaultAddress = "127.0.0.1"
+	DefaultPort    = "50051"
+	DefaultNodeID  = "node-1"
+	DefaultTarget  = "127.0.0.1:50051"
 )
 
 // Config holds the configuration for a node
@@ -25,7 +24,6 @@ type Config struct {
 	Port    string
 
 	// Client configuration (optional)
-	ClientMode   bool
 	TargetServer string
 
 	// Gossip configuration
@@ -38,9 +36,8 @@ func DefaultConfig(nodeID gossip.NodeID) *Config {
 		NodeID:            nodeID,
 		Address:           DefaultAddress,
 		Port:              DefaultPort,
-		ClientMode:        DefaultClientMode,
 		TargetServer:      DefaultTarget,
-		HeartbeatInterval: 5 * time.Second,
+		HeartbeatInterval: 2 * time.Second,
 	}
 }
 
@@ -58,9 +55,6 @@ func (c *Config) Validate() error {
 	if c.HeartbeatInterval <= 0 {
 		return ErrInvalidHeartbeatInterval
 	}
-	if c.ClientMode && c.TargetServer == "" {
-		return ErrTargetServerRequired
-	}
 	return nil
 }
 
@@ -68,4 +62,3 @@ func (c *Config) Validate() error {
 func (c *Config) GetAddress() string {
 	return c.Address + ":" + c.Port
 }
-
