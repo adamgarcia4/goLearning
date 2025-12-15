@@ -1,11 +1,8 @@
 package gossip
 
 import (
-	"context"
 	"fmt"
 	"time"
-
-	"github.com/adamgarcia4/goLearning/cassandra/logger"
 )
 
 /**
@@ -100,46 +97,29 @@ Overview:
 		IFailureDetectionEventListener - Allows other components to react to node status changes
 		GossiperDiagnostics, GossiperEvent - Introspection / debugging for gossip
 		StorageService - Uses gossip to know the ring, endpoints, and where replicas live.
+
+File Organization:
+	gossip.go - Core GossipState struct and constructor
+	types.go - Basic type definitions (NodeID, AppStateKey, AppState)
+	heartbeat_state.go - HeartbeatState management
+	endpoint_state.go - EndpointState struct
+	digest.go - Digest creation and comparison logic
+	state_management.go - State merging and update logic
+	heartbeat_handler.go - Heartbeat sending and receiving
 */
 
+// GossipState is the central state manager for the gossip protocol
+// It maintains knowledge about all nodes in the cluster and coordinates heartbeat exchange
 type GossipState struct {
 	nodeID            NodeID
 	heartbeatInterval time.Duration
 	myHeartbeatState  *HeartbeatState // pointer to avoid copying mutex
 
-	// StateByNode map[NodeID]*EndpointState
+	StateByNode map[NodeID]*EndpointState
+	logFn       func(format string, args ...interface{})
 }
 
-// HeartbeatSender is a function that sends a heartbeat and returns the response node ID and timestamp
-type HeartbeatSender func(heartbeatState HeartbeatStateSnapshot) (string, int64, error)
-
-func (g *GossipState) SendHeartbeat(sendHeartbeat HeartbeatSender) (string, int64, error) {
-	if g.myHeartbeatState == nil {
-		panic("GossipState not initialized: use NewGossipState")
-	}
-	// HeartbeatState manages its own mutex, so we don't need to lock GossipState here
-	updatedHeartbeatState := g.myHeartbeatState.UpdateHeartbeat()
-	return sendHeartbeat(updatedHeartbeatState)
-}
-
-func (g *GossipState) InitializeHeartbeatSending(ctx context.Context, sendHeartbeat HeartbeatSender) {
-	ticker := time.NewTicker(g.heartbeatInterval)
-	defer ticker.Stop()
-	logger.Printf("Node %s: Starting to send heartbeats every %v", string(g.nodeID), g.heartbeatInterval)
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			_, _, err := g.SendHeartbeat(sendHeartbeat)
-			if err != nil {
-				logger.Printf("Node %s: Failed to send heartbeat: %v", string(g.nodeID), err)
-			}
-		}
-	}
-}
-
+// LocalHeartbeat returns a snapshot of the local node's heartbeat state
 func (g *GossipState) LocalHeartbeat() HeartbeatStateSnapshot {
 	if g.myHeartbeatState == nil {
 		panic("GossipState not initialized: use NewGossipState")
@@ -148,29 +128,7 @@ func (g *GossipState) LocalHeartbeat() HeartbeatStateSnapshot {
 	return g.myHeartbeatState.GetSnapshot()
 }
 
-// HandleHeartbeat processes an incoming heartbeat from a remote node
-// It merges the remote state and returns the local node's heartbeat state
-func (g *GossipState) HandleHeartbeat(remoteNodeID string, remoteGeneration int64, remoteVersion int64) (localNodeID string, localGeneration int64, localVersion int64, err error) {
-	if g.myHeartbeatState == nil {
-		panic("GossipState not initialized: use NewGossipState")
-	}
-	// TODO: Implement proper state merging logic
-	// For now, just return our local state
-	// In the future, this should:
-	// 1. Compare remote generation/version with local state
-	// 2. Merge remote state into StateByNode map
-	// 3. Update local state if remote is newer
-
-	snapshot := g.myHeartbeatState.GetSnapshot()
-	logger.Printf("[%s] Processing heartbeat from %s (remote gen: %d, local gen: %d)", string(g.nodeID), remoteNodeID, remoteGeneration, snapshot.Generation)
-	return string(snapshot.NodeID), snapshot.Generation, snapshot.Version, nil
-}
-
-func (g *GossipState) Start(ctx context.Context, sendHeartbeat HeartbeatSender) {
-	go g.InitializeHeartbeatSending(ctx, sendHeartbeat)
-}
-
-func NewGossipState(nodeID NodeID, interval time.Duration) (*GossipState, error) {
+func NewGossipState(nodeID NodeID, interval time.Duration, logFn func(format string, args ...interface{})) (*GossipState, error) {
 	if interval <= 0 {
 		return nil, fmt.Errorf("interval must be greater than 0")
 	}
@@ -179,9 +137,40 @@ func NewGossipState(nodeID NodeID, interval time.Duration) (*GossipState, error)
 		return nil, fmt.Errorf("nodeID must be set")
 	}
 
+	now := time.Now().Unix()
+	myHeartbeatState := NewHeartbeatState(nodeID, now)
+	initialSnapshot := myHeartbeatState.GetSnapshot()
+
+	stateByNode := make(map[NodeID]*EndpointState)
+
+	// Initialize local node's EndpointState in StateByNode - Cassandra style
+	// This allows us to treat all nodes uniformly in CreateDigests and other operations
+	stateByNode[nodeID] = &EndpointState{
+		HeartbeatState:    initialSnapshot,
+		applicationStates: make(map[AppStateKey]AppState),
+		isAlive:           true,
+		updateTimestamp:   now,
+	}
+
+	// Initialize default application states for local node
+	stateByNode[nodeID].applicationStates[AppStatus] = AppState{
+		Status:  "UP",
+		Address: "",
+		Value:   "UP",
+		Version: 1,
+	}
+	stateByNode[nodeID].applicationStates[AppHeartbeat] = AppState{
+		Status:  "UP",
+		Address: "",
+		Value:   "",
+		Version: 1,
+	}
+
 	return &GossipState{
 		nodeID:            nodeID,
 		heartbeatInterval: interval,
-		myHeartbeatState:  NewHeartbeatState(nodeID, time.Now().Unix()),
+		myHeartbeatState:  myHeartbeatState,
+		StateByNode:       stateByNode,
+		logFn:             logFn,
 	}, nil
 }

@@ -2,6 +2,7 @@ package transport
 
 import (
 	"context"
+	"time"
 
 	gossipProtobuffer "github.com/adamgarcia4/goLearning/cassandra/api/gossip/v1" // Import to register proto file descriptors for reflection
 	"github.com/adamgarcia4/goLearning/cassandra/logger"
@@ -19,25 +20,22 @@ type HeartbeatServiceServer struct {
 
 // Heartbeat handles heartbeat requests
 func (s *HeartbeatServiceServer) Heartbeat(ctx context.Context, req *gossipProtobuffer.HeartbeatRequest) (*gossipProtobuffer.HeartbeatResponse, error) {
-	logger.Printf("[%s] Heartbeat received from %s (generation: %d)", s.nodeID, req.NodeId, req.Timestamp)
+	logger.Printf("HeartbeatServiceServer: Heartbeat received from %s", req.NodeId)
 	// Convert proto → gossip types and call handler
-	localNodeID, localGeneration, _, err := s.handler.HandleHeartbeat(
+	localNodeID, _, _, err := s.handler.HandleHeartbeat(
 		req.NodeId,
 		req.Timestamp,
 		0, // Version not in proto request, using 0 for now
 	)
 
 	if err != nil {
-		logger.Printf("[%s] Error handling heartbeat from %s: %v", s.nodeID, req.NodeId, err)
 		return nil, err
 	}
 
 	// Convert gossip → proto types
-	// Note: proto response only has node_id and timestamp, so we use Generation as timestamp in response
-	resp := &gossipProtobuffer.HeartbeatResponse{
+	// Note: proto response only has node_id and timestamp, so we use Generation as timestamp
+	return &gossipProtobuffer.HeartbeatResponse{
 		NodeId:    localNodeID,
-		Timestamp: localGeneration, // Use local generation as timestamp in response
-	}
-	logger.Printf("[%s] Heartbeat response sent to %s (local generation: %d)", s.nodeID, req.NodeId, localGeneration)
-	return resp, nil
+		Timestamp: time.Now().Unix(), // Using Generation as timestamp in response
+	}, nil
 }

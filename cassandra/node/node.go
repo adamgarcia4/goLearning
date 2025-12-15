@@ -41,7 +41,9 @@ func New(config *Config) (*Node, error) {
 	}
 
 	// Create gossip state
-	gossipState, err := gossip.NewGossipState(config.NodeID, config.HeartbeatInterval)
+	gossipState, err := gossip.NewGossipState(config.NodeID, config.HeartbeatInterval, func(format string, args ...interface{}) {
+		logger.Printf("[%s] %s", string(config.NodeID), fmt.Sprintf(format, args...))
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create gossip state: %w", err)
 	}
@@ -62,11 +64,11 @@ func (n *Node) Start() error {
 	defer n.mu.Unlock()
 
 	// Start client mode if configured
-		if err := n.startClient(); err != nil {
-			return fmt.Errorf("failed to start client: %w", err)
-		}
+	if err := n.startClient(); err != nil {
+		return fmt.Errorf("failed to start client: %w", err)
+	}
 	n.logf("Node %s will send heartbeats to %s every %v",
-			n.config.NodeID, n.config.TargetServer, n.config.HeartbeatInterval)
+		n.config.NodeID, n.config.TargetServer, n.config.HeartbeatInterval)
 
 	// Always start the server
 	if err := n.startServer(); err != nil {
@@ -83,7 +85,7 @@ func (n *Node) Stop() error {
 	nodeID := n.config.NodeID
 	grpcServer := n.grpcServer
 	clientConn := n.clientConn
-	
+
 	// Cancel context to stop all goroutines (heartbeat sending, etc.)
 	n.cancel()
 	n.mu.Unlock()
@@ -186,7 +188,7 @@ func (n *Node) startClient() error {
 
 	// Start automatic heartbeat sending only if not in manual mode
 	if !n.config.ManualHeartbeat {
-	n.gossipState.Start(n.ctx, sendHeartbeat)
+		n.gossipState.Start(n.ctx, sendHeartbeat)
 		n.logf("Automatic heartbeat sending enabled (interval: %v)", n.config.HeartbeatInterval)
 	} else {
 		n.logf("Manual heartbeat mode enabled - press 'H' to send heartbeats")

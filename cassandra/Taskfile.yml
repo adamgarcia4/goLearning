@@ -13,7 +13,7 @@ tasks:
   startB:
     cmds:
       - echo "Starting node B (client mode)"
-      - go run . --port=50052 --node-id=node-2 --client --target=127.0.0.1:50051
+      - go run . --port=50052 --node-id=node-2 --target=127.0.0.1:50051
   init:
     deps:
       # - startA
@@ -25,3 +25,12 @@ tasks:
     cmds:
       - go run . --port=50051 --node-id=node-1
     silent: true
+
+  # Generate protobuf code from .proto files
+  proto:
+    desc: Generate Go code from protobuf definitions
+    cmds:
+      - echo "Generating protobuf code..."
+      - protoc --go_out=. --go_opt=paths=source_relative --go-grpc_out=. --go-grpc_opt=paths=source_relative api/gossip/v1/heartbeat.proto
+      - protoc --go_out=. --go_opt=paths=source_relative --go-grpc_out=. --go-grpc_opt=paths=source_relative api/gossip/v1/gossip.proto
+      - echo "✅ Protobuf code generated successfully"
