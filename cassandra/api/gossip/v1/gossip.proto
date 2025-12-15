@@ -1,0 +1,54 @@
+syntax = "proto3";
+
+package github.adamgarcia4.golearning.cassandra.gossip.v1;
+
+option go_package = "github.com/adamgarcia4/goLearning/cassandra/api/gossip/v1";
+
+// Digest represents a compact summary of endpoint state
+message GossipDigest {
+    string node_id = 1;
+    int64 generation = 2;
+    int64 max_version = 3;
+}
+
+// Phase 1: SYN - Initiator sends digests of all known endpoints
+message GossipDigestSynMsg {
+    string cluster_id = 1;
+    repeated GossipDigest digests = 2;
+}
+
+// ApplicationState represents a piece of versioned application state
+message ApplicationState {
+    string key = 1;      // e.g., "STATUS", "ADDR"
+    string value = 2;
+    int64 version = 3;
+}
+
+// EndpointState represents complete state for a node
+message EndpointState {
+    string node_id = 1;
+    int64 generation = 2;
+    int64 version = 3;
+    map<string, ApplicationState> application_states = 4;
+    int64 update_timestamp = 5;
+}
+
+// Phase 2: ACK - Peer responds with states and requests
+message GossipDigestAck {
+    // States the peer has that the initiator needs
+    repeated EndpointState endpoint_states = 1;
+
+    // Digests of states the peer needs from the initiator
+    repeated GossipDigest request_digests = 2;
+}
+
+// Phase 3: ACK2 - Initiator sends requested states
+message GossipDigestAck2 {
+    repeated EndpointState endpoint_states = 1;
+}
+
+service GossipService {
+    // 3-phase gossip exchange
+    rpc GossipDigestSyn(GossipDigestSynMsg) returns (GossipDigestAck);
+    // rpc GossipDigestAck2(GossipDigestAck2) returns (google.protobuf.Empty);
+}
