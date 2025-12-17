@@ -30,3 +30,41 @@ type EndpointState struct {
 	// phi (float64) - Failure detection metric (phi accrual)
 	// phi float64
 }
+
+// GetApplicationStates returns a copy of the application states map
+func (es *EndpointState) GetApplicationStates() map[AppStateKey]AppState {
+	result := make(map[AppStateKey]AppState)
+	for k, v := range es.applicationStates {
+		result[k] = v
+	}
+	return result
+}
+
+// GetIsAlive returns whether the node is alive
+func (es *EndpointState) GetIsAlive() bool {
+	return es.isAlive
+}
+
+// GetUpdateTimestamp returns the update timestamp
+func (es *EndpointState) GetUpdateTimestamp() int64 {
+	return es.updateTimestamp
+}
+
+// NewEndpointState creates a new EndpointState from components
+// This is used when converting from proto format
+func NewEndpointState(
+	heartbeatState HeartbeatStateSnapshot,
+	appStates map[AppStateKey]AppState,
+	isAlive bool,
+	updateTimestamp int64,
+) *EndpointState {
+	if appStates == nil {
+		appStates = make(map[AppStateKey]AppState)
+	}
+	return &EndpointState{
+		HeartbeatState:    heartbeatState,
+		applicationStates: appStates,
+		isAlive:           isAlive,
+		updateTimestamp:   updateTimestamp,
+	}
+}

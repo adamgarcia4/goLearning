@@ -121,6 +121,21 @@ func (g *GossipState) runGossipRound(ctx context.Context, sendSyn GossipSynSende
 	}
 }
 
+// HandleGossipSyn processes received SYN digests and generates ACK response
+// Returns the endpoint states to send and digests to request
+func (g *GossipState) HandleGossipSyn(remoteDigests []GossipDigest) (
+	endpointStates []*EndpointState,
+	requestDigests []GossipDigest,
+) {
+	// Compare digests to determine what to send/request
+	endpointStates, requestDigests = g.CompareDigests(remoteDigests)
+
+	g.logFn("Processed SYN: sending %d endpoint states, requesting %d digests",
+		len(endpointStates), len(requestDigests))
+
+	return endpointStates, requestDigests
+}
+
 // doGossipRound performs a single gossip round:
 // 1. Increment local heartbeat version
 // 2. Create digests for all known nodes

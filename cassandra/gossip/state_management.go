@@ -119,3 +119,59 @@ func (g *GossipState) updateLocalEndpointState(snapshot HeartbeatStateSnapshot) 
 		}
 	}
 }
+
+// MergeEndpointState merges a complete EndpointState (from another node) into local state.
+// This is used when receiving EndpointStates from ACK messages.
+// It follows the merge rules:
+// - New node: Accept all state
+// - Higher generation: Accept all (node restarted)
+// - Lower generation: Ignore (stale data)
+// - Same generation: Merge by version (higher wins, per-key for app states)
+func (g *GossipState) MergeEndpointState(nodeID NodeID, remoteState *EndpointState) {
+	now := time.Now().Unix()
+	localState := g.StateByNode[nodeID]
+
+	if localState == nil {
+		// New node - accept all state
+		g.StateByNode[nodeID] = remoteState
+		g.logFn("New node discovered: %s (gen: %d, ver: %d)",
+			nodeID, remoteState.HeartbeatState.Generation, remoteState.HeartbeatState.Version)
+		return
+	}
+
+	// Compare generations
+	if remoteState.HeartbeatState.Generation > localState.HeartbeatState.Generation {
+		// Remote has restarted with newer generation - accept all state
+		g.StateByNode[nodeID] = remoteState
+		g.logFn("Node %s restarted (old gen: %d, new gen: %d)",
+			nodeID, localState.HeartbeatState.Generation, remoteState.HeartbeatState.Generation)
+		return
+	}
+
+	if remoteState.HeartbeatState.Generation < localState.HeartbeatState.Generation {
+		// Our generation is newer - ignore remote state
+		return
+	}
+
+	// Same generation - merge based on versions
+	if remoteState.HeartbeatState.Version > localState.HeartbeatState.Version {
+		localState.HeartbeatState = remoteState.HeartbeatState
+	}
+
+	// Merge application states per-key (higher version wins per key)
+	for key, remoteAppState := range remoteState.applicationStates {
+		localAppState, exists := localState.applicationStates[key]
+		if !exists || remoteAppState.Version > localAppState.Version {
+			localState.applicationStates[key] = remoteAppState
+		}
+	}
+
+	// Update metadata
+	if remoteState.updateTimestamp > localState.updateTimestamp {
+		localState.updateTimestamp = remoteState.updateTimestamp
+		localState.isAlive = remoteState.isAlive
+	} else {
+		localState.updateTimestamp = now
+		localState.isAlive = true
+	}
+}

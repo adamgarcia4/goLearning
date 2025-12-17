@@ -12,16 +12,17 @@ import (
 )
 
 type GRPC struct {
-	addr              string
-	srv               *grpc.Server
-	lis               net.Listener
-	nodeID            string
-	clusterID         string
-	gossipHandler     GossipHandler
-	onPeerDiscovered  PeerDiscoveryCallback
-	serveErrCh        chan error // Channel to receive Serve() errors (for monitoring)
-	stopOnce          sync.Once  // Ensures Stop() is idempotent and thread-safe
-	stopErr           error      // Captured error from lis.Close()
+	addr             string
+	srv              *grpc.Server
+	lis              net.Listener
+	nodeID           string
+	clusterID        string
+	gossipHandler    GossipHandler
+	digestHandler    GossipDigestHandler
+	onPeerDiscovered PeerDiscoveryCallback
+	serveErrCh       chan error // Channel to receive Serve() errors (for monitoring)
+	stopOnce         sync.Once  // Ensures Stop() is idempotent and thread-safe
+	stopErr          error      // Captured error from lis.Close()
 }
 
 func (g *GRPC) setupTcp() (net.Listener, error) {
@@ -50,7 +51,7 @@ func (g *GRPC) setupServices() error {
 	gossipServer := &GossipServiceServer{
 		nodeID:           g.nodeID,
 		clusterID:        g.clusterID,
-		handler:          nil, // No custom handler for now - uses default empty ACK response
+		handler:          g.digestHandler,
 		onPeerDiscovered: g.onPeerDiscovered,
 	}
 	gossipProtobuffer.RegisterGossipServiceServer(g.srv, gossipServer)
@@ -117,7 +118,7 @@ func (g *GRPC) ServeErrors() <-chan error {
 	return g.serveErrCh
 }
 
-func NewGRPC(addr string, nodeID string, clusterID string, gossipHandler GossipHandler, onPeerDiscovered PeerDiscoveryCallback) (*GRPC, error) {
+func NewGRPC(addr string, nodeID string, clusterID string, gossipHandler GossipHandler, digestHandler GossipDigestHandler, onPeerDiscovered PeerDiscoveryCallback) (*GRPC, error) {
 	if addr == "" || !strings.Contains(addr, ":") {
 		return nil, fmt.Errorf("invalid address: %s", addr)
 	}
@@ -140,6 +141,7 @@ func NewGRPC(addr string, nodeID string, clusterID string, gossipHandler GossipH
 		nodeID:           nodeID,
 		clusterID:        clusterID,
 		gossipHandler:    gossipHandler,
+		digestHandler:    digestHandler,
 		onPeerDiscovered: onPeerDiscovered,
 		serveErrCh:       make(chan error, 1), // Buffered channel for serve errors
 	}, nil
