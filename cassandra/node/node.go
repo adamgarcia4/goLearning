@@ -19,7 +19,10 @@ type Node struct {
 	config      *Config
 	gossipState *gossip.GossipState
 	grpcServer  *transport.GRPC
-	clientConn  *grpc.ClientConn
+
+	// Peer connections for gossip
+	peerConns   map[string]*grpc.ClientConn
+	peerClients map[string]pbproto.GossipServiceClient
 
 	// Lifecycle management
 	ctx    context.Context
@@ -38,7 +41,9 @@ func New(config *Config) (*Node, error) {
 	}
 
 	// Create gossip state
-	gossipState, err := gossip.NewGossipState(config.NodeID, config.HeartbeatInterval)
+	gossipState, err := gossip.NewGossipState(config.NodeID, config.ClusterID, config.HeartbeatInterval, func(format string, args ...interface{}) {
+		logger.Printf("[%s] %s", string(config.NodeID), fmt.Sprintf(format, args...))
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create gossip state: %w", err)
 	}
@@ -48,31 +53,35 @@ func New(config *Config) (*Node, error) {
 	return &Node{
 		config:      config,
 		gossipState: gossipState,
+		peerConns:   make(map[string]*grpc.ClientConn),
+		peerClients: make(map[string]pbproto.GossipServiceClient),
 		ctx:         ctx,
 		cancel:      cancel,
 	}, nil
 }
 
-// Start starts the node (both server and client if configured)
+// Start starts the node (both server and gossip connections)
 func (n *Node) Start() error {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 
-	// Start client mode if configured
-	if n.config.ClientMode {
-		if err := n.startClient(); err != nil {
-			return fmt.Errorf("failed to start client: %w", err)
-		}
-		n.logf("Client mode enabled: node %s will send heartbeats to %s every %v",
-			n.config.NodeID, n.config.TargetServer, n.config.HeartbeatInterval)
-	}
-
-	// Always start the server
+	// Always start the server first
 	if err := n.startServer(); err != nil {
 		return fmt.Errorf("failed to start server: %w", err)
 	}
 
-	n.logf("Node %s started on %s", n.config.NodeID, n.config.GetAddress())
+	// Connect to seed peers
+	if err := n.connectToPeers(); err != nil {
+		return fmt.Errorf("failed to connect to peers: %w", err)
+	}
+
+	// Start gossip round if not in manual mode
+	if !n.config.ManualHeartbeat && len(n.peerClients) > 0 {
+		n.startGossipRound()
+	}
+
+	n.logf("Node %s started on %s (cluster: %s, seeds: %v)",
+		n.config.NodeID, n.config.GetAddress(), n.config.ClusterID, n.config.Seeds)
 	return nil
 }
 
@@ -81,27 +90,25 @@ func (n *Node) Stop() error {
 	n.mu.Lock()
 	nodeID := n.config.NodeID
 	grpcServer := n.grpcServer
-	clientConn := n.clientConn
-	
-	// Cancel context to stop all goroutines (heartbeat sending, etc.)
+	peerConns := n.peerConns
+
+	// Cancel context to stop all goroutines (gossip rounds, etc.)
 	n.cancel()
 	n.mu.Unlock()
 
 	n.logf("Stopping node %s...", nodeID)
 
 	// Stop gRPC server first (this will unblock the Serve() call)
-	// Lock is released to avoid deadlocks if callbacks try to access Node
 	if grpcServer != nil {
 		if err := grpcServer.Stop(); err != nil {
 			n.logf("Error stopping gRPC server: %v", err)
 		}
 	}
 
-	// Close client connection if exists
-	// Lock is released to avoid deadlocks if callbacks try to access Node
-	if clientConn != nil {
-		if err := clientConn.Close(); err != nil {
-			n.logf("Error closing client connection: %v", err)
+	// Close all peer connections
+	for addr, conn := range peerConns {
+		if err := conn.Close(); err != nil {
+			n.logf("Error closing connection to %s: %v", addr, err)
 		}
 	}
 
@@ -128,7 +135,9 @@ func (n *Node) startServer() error {
 	grpcTransport, err := transport.NewGRPC(
 		n.config.GetAddress(),
 		string(n.config.NodeID),
+		n.config.ClusterID,
 		n.gossipState,
+		n.AddPeer, // Wire peer discovery callback
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create gRPC transport: %w", err)
@@ -149,38 +158,148 @@ func (n *Node) startServer() error {
 	return nil
 }
 
-// startClient starts the client that sends heartbeats
-func (n *Node) startClient() error {
-	// Create gRPC client connection
+// connectToPeers establishes connections to all configured seed nodes
+func (n *Node) connectToPeers() error {
+	myAddr := n.config.GetAddress()
+
+	for _, seedAddr := range n.config.Seeds {
+		// Skip self
+		if seedAddr == myAddr {
+			continue
+		}
+
+		n.logf("Connecting to seed peer %s", seedAddr)
+		conn, err := grpc.NewClient(
+			seedAddr,
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+		)
+		if err != nil {
+			n.logf("Warning: failed to connect to seed %s: %v", seedAddr, err)
+			continue // Don't fail entirely if one seed is unreachable
+		}
+
+		n.peerConns[seedAddr] = conn
+		n.peerClients[seedAddr] = pbproto.NewGossipServiceClient(conn)
+		n.logf("Connected to peer %s", seedAddr)
+	}
+
+	return nil
+}
+
+// startGossipRound starts the periodic gossip round that sends SYN to all peers
+func (n *Node) startGossipRound() {
+	// Create sender function that sends SYN to all peers
+	sendSynToAll := func(digests []gossip.GossipDigest) {
+		// Convert gossip.GossipDigest to proto
+		protoDigests := make([]*pbproto.GossipDigest, 0, len(digests))
+
+		for _, d := range digests {
+			protoDigests = append(protoDigests, &pbproto.GossipDigest{
+				NodeId:     d.NodeID,
+				Generation: int64(d.Generation),
+				MaxVersion: int64(d.MaxVersion),
+			})
+		}
+
+		msg := &pbproto.GossipDigestSynMsg{
+			ClusterId:     n.config.ClusterID,
+			Digests:       protoDigests,
+			SenderAddress: n.config.GetAddress(),
+		}
+
+		// Send to all peers concurrently
+		for addr, client := range n.peerClients {
+			go func(addr string, client pbproto.GossipServiceClient) {
+				resp, err := client.GossipDigestSyn(n.ctx, msg)
+				if err != nil {
+					n.logf("Failed to send SYN to %s: %v", addr, err)
+					return
+				}
+				// TODO: Process ACK response (Phase 2)
+				n.logf("Received ACK from %s with %d endpoint states and %d request digests",
+					addr, len(resp.EndpointStates), len(resp.RequestDigests))
+			}(addr, client)
+		}
+	}
+
+	// Start the gossip round loop
+	n.gossipState.StartGossipRound(n.ctx, sendSynToAll)
+	n.logf("Gossip round started (interval: %v)", n.config.HeartbeatInterval)
+}
+
+// SendGossipRound manually triggers a gossip round (only works in manual mode)
+func (n *Node) SendGossipRound() error {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+
+	if !n.config.ManualHeartbeat {
+		return fmt.Errorf("node is not in manual gossip mode")
+	}
+
+	if len(n.peerClients) == 0 {
+		return fmt.Errorf("no peers connected")
+	}
+
+	// Create and send digests
+	digests := n.gossipState.CreateDigests()
+
+	// Convert and send
+	protoDigests := make([]*pbproto.GossipDigest, 0, len(digests))
+	for _, d := range digests {
+		protoDigests = append(protoDigests, &pbproto.GossipDigest{
+			NodeId:     d.NodeID,
+			Generation: int64(d.Generation),
+			MaxVersion: int64(d.MaxVersion),
+		})
+	}
+
+	msg := &pbproto.GossipDigestSynMsg{
+		ClusterId:     n.config.ClusterID,
+		Digests:       protoDigests,
+		SenderAddress: n.config.GetAddress(),
+	}
+
+	for addr, client := range n.peerClients {
+		go func(addr string, client pbproto.GossipServiceClient) {
+			resp, err := client.GossipDigestSyn(n.ctx, msg)
+			if err != nil {
+				n.logf("Failed to send SYN to %s: %v", addr, err)
+				return
+			}
+			n.logf("Received ACK from %s with %d endpoint states", addr, len(resp.EndpointStates))
+		}(addr, client)
+	}
+
+	return nil
+}
+
+// AddPeer dynamically adds a new peer connection if not already connected.
+// This enables Cassandra-style peer discovery through gossip.
+func (n *Node) AddPeer(peerAddr string) error {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	// Skip if already connected
+	if _, exists := n.peerConns[peerAddr]; exists {
+		return nil
+	}
+
+	// Skip self
+	if peerAddr == n.config.GetAddress() {
+		return nil
+	}
+
 	conn, err := grpc.NewClient(
-		n.config.TargetServer,
+		peerAddr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	)
 	if err != nil {
-		return fmt.Errorf("failed to connect to target server: %w", err)
+		return fmt.Errorf("failed to connect to peer %s: %w", peerAddr, err)
 	}
 
-	n.clientConn = conn
-	client := pbproto.NewHeartbeatServiceClient(conn)
-
-	// Create heartbeat sender function
-	sendHeartbeat := func(heartbeatState gossip.HeartbeatStateSnapshot) (string, int64, error) {
-		req := &pbproto.HeartbeatRequest{
-			NodeId:    string(heartbeatState.NodeID),
-			Timestamp: heartbeatState.Generation,
-		}
-
-		resp, err := client.Heartbeat(n.ctx, req)
-		if err != nil {
-			return "", 0, err
-		}
-
-		return resp.NodeId, resp.Timestamp, nil
-	}
-
-	// Start heartbeat sending
-	n.gossipState.Start(n.ctx, sendHeartbeat)
-
+	n.peerConns[peerAddr] = conn
+	n.peerClients[peerAddr] = pbproto.NewGossipServiceClient(conn)
+	n.logf("Discovered and connected to new peer: %s", peerAddr)
 	return nil
 }
 

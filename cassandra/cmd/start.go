@@ -14,25 +14,23 @@ import (
 )
 
 var (
-	address      string
-	port         string
-	nodeID       string
-	clientMode   bool
-	targetServer string
+	address string
+	port    string
+	nodeID  string
+	seeds   []string
 )
 
 var startCmd = &cobra.Command{
 	Use:   "start",
 	Short: "Start a gossip node",
-	Long: `Start a gossip protocol node. The node can run in server mode (default)
-or client mode (when --client flag is set).
+	Long: `Start a gossip protocol node.
 
 Examples:
-  # Start a node in server mode
+  # Start a node
   cassandra start --node-id=node-1 --port=50051
 
-  # Start a node in client mode that sends heartbeats to another node
-  cassandra start --node-id=node-2 --port=50052 --client --target=127.0.0.1:50051`,
+  # Start a node with seeds (peers to gossip with)
+  cassandra start --node-id=node-2 --port=50052 --seeds=127.0.0.1:50051`,
 	Run: runStart,
 }
 
@@ -44,9 +42,8 @@ func init() {
 	startCmd.Flags().StringVarP(&port, "port", "p", node.DefaultPort, "Port to bind the server to")
 	startCmd.Flags().StringVarP(&nodeID, "node-id", "n", node.DefaultNodeID, "Unique node identifier")
 
-	// Client flags
-	startCmd.Flags().BoolVarP(&clientMode, "client", "c", node.DefaultClientMode, "Run in client mode (send heartbeats)")
-	startCmd.Flags().StringVarP(&targetServer, "target", "t", node.DefaultTarget, "Target server address (required in client mode)")
+	// Gossip flags
+	startCmd.Flags().StringSliceVarP(&seeds, "seeds", "s", []string{}, "Seed node addresses for gossip (comma-separated)")
 }
 
 func runStart(cmd *cobra.Command, args []string) {
@@ -59,8 +56,7 @@ func runStart(cmd *cobra.Command, args []string) {
 	// Override with CLI flags
 	config.Address = address
 	config.Port = port
-	config.ClientMode = clientMode
-	config.TargetServer = targetServer
+	config.Seeds = seeds
 
 	// Create and start the node
 	n, err := node.New(config)

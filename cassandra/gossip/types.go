@@ -50,6 +50,8 @@ const (
 )
 
 type AppState struct {
+	Status  string
+	Address string
 	Value   string
 	Version int64
 }
