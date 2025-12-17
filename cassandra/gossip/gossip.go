@@ -105,13 +105,13 @@ File Organization:
 	endpoint_state.go - EndpointState struct
 	digest.go - Digest creation and comparison logic
 	state_management.go - State merging and update logic
-	heartbeat_handler.go - Heartbeat sending and receiving
 */
 
 // GossipState is the central state manager for the gossip protocol
-// It maintains knowledge about all nodes in the cluster and coordinates heartbeat exchange
+// It maintains knowledge about all nodes in the cluster and coordinates gossip exchange
 type GossipState struct {
 	nodeID            NodeID
+	clusterID         string
 	heartbeatInterval time.Duration
 	myHeartbeatState  *HeartbeatState // pointer to avoid copying mutex
 
@@ -128,13 +128,17 @@ func (g *GossipState) LocalHeartbeat() HeartbeatStateSnapshot {
 	return g.myHeartbeatState.GetSnapshot()
 }
 
-func NewGossipState(nodeID NodeID, interval time.Duration, logFn func(format string, args ...interface{})) (*GossipState, error) {
+func NewGossipState(nodeID NodeID, clusterID string, interval time.Duration, logFn func(format string, args ...interface{})) (*GossipState, error) {
 	if interval <= 0 {
 		return nil, fmt.Errorf("interval must be greater than 0")
 	}
 
 	if nodeID == "" {
 		return nil, fmt.Errorf("nodeID must be set")
+	}
+
+	if clusterID == "" {
+		return nil, fmt.Errorf("clusterID must be set")
 	}
 
 	now := time.Now().Unix()
@@ -168,9 +172,15 @@ func NewGossipState(nodeID NodeID, interval time.Duration, logFn func(format str
 
 	return &GossipState{
 		nodeID:            nodeID,
+		clusterID:         clusterID,
 		heartbeatInterval: interval,
 		myHeartbeatState:  myHeartbeatState,
 		StateByNode:       stateByNode,
 		logFn:             logFn,
 	}, nil
+}
+
+// ClusterID returns the cluster ID
+func (g *GossipState) ClusterID() string {
+	return g.clusterID
 }

@@ -38,10 +38,18 @@ func (m *Manager) CreateNode() (*Node, error) {
 	nodeID := gossip.NodeID(fmt.Sprintf("node-%d", m.nextID))
 	m.nextID++ // increment counter for next node
 
+	// Collect existing nodes as seeds for the new node
+	seeds := make([]string, 0, len(m.nodes))
+	for _, existingNode := range m.nodes {
+		existingConfig := existingNode.GetConfig()
+		seeds = append(seeds, existingConfig.GetAddress())
+	}
+
 	config := DefaultConfig(nodeID)
 	config.Port = fmt.Sprintf("%d", port)
 	config.Address = "127.0.0.1"
-	config.ManualHeartbeat = true // Interactive nodes use manual heartbeat mode
+	config.Seeds = seeds
+	config.ManualHeartbeat = true // Interactive nodes use manual gossip mode
 
 	node, err := New(config)
 	if err != nil {

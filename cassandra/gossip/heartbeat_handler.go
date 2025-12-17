@@ -89,6 +89,52 @@ func (g *GossipState) HandleHeartbeat(remoteNodeID string, remoteGeneration int6
 }
 
 // Start begins the heartbeat sending process in a background goroutine
+// Deprecated: Use StartGossipRound for proper 3-phase gossip protocol
 func (g *GossipState) Start(ctx context.Context, sendHeartbeat HeartbeatSender) {
 	go g.InitializeHeartbeatSending(ctx, sendHeartbeat)
+}
+
+// GossipSynSender is a function that sends gossip SYN messages to peers
+// It receives digests and is responsible for sending them to all peers
+type GossipSynSender func(digests []GossipDigest)
+
+// StartGossipRound begins the periodic gossip round that sends SYN messages to peers
+// This implements Phase 1 of the 3-phase gossip protocol
+func (g *GossipState) StartGossipRound(ctx context.Context, sendSyn GossipSynSender) {
+	go g.runGossipRound(ctx, sendSyn)
+}
+
+// runGossipRound runs the periodic gossip round loop
+func (g *GossipState) runGossipRound(ctx context.Context, sendSyn GossipSynSender) {
+	ticker := time.NewTicker(g.heartbeatInterval)
+	defer ticker.Stop()
+	logger.Printf("Node %s: Starting gossip rounds every %v", string(g.nodeID), g.heartbeatInterval)
+
+	for {
+		select {
+		case <-ctx.Done():
+			logger.Printf("Node %s: Gossip round stopped", string(g.nodeID))
+			return
+		case <-ticker.C:
+			g.doGossipRound(sendSyn)
+		}
+	}
+}
+
+// doGossipRound performs a single gossip round:
+// 1. Increment local heartbeat version
+// 2. Create digests for all known nodes
+// 3. Send SYN to peers
+func (g *GossipState) doGossipRound(sendSyn GossipSynSender) {
+	// Update local heartbeat state (increment version)
+	updatedHeartbeat := g.myHeartbeatState.UpdateHeartbeat()
+	g.updateLocalEndpointState(updatedHeartbeat)
+
+	// Create digests for all known endpoints
+	digests := g.CreateDigests()
+
+	g.logFn("Gossip round: sending %d digests to peers", len(digests))
+
+	// Send SYN to all peers
+	sendSyn(digests)
 }

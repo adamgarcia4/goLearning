@@ -12,15 +12,16 @@ import (
 )
 
 type GRPC struct {
-	addr          string
-	srv           *grpc.Server
-	lis           net.Listener
-	nodeID        string
-	gossipHandler GossipHandler
-	// logger *log.Logger
-	serveErrCh chan error // Channel to receive Serve() errors (for monitoring)
-	stopOnce   sync.Once  // Ensures Stop() is idempotent and thread-safe
-	stopErr    error      // Captured error from lis.Close()
+	addr              string
+	srv               *grpc.Server
+	lis               net.Listener
+	nodeID            string
+	clusterID         string
+	gossipHandler     GossipHandler
+	onPeerDiscovered  PeerDiscoveryCallback
+	serveErrCh        chan error // Channel to receive Serve() errors (for monitoring)
+	stopOnce          sync.Once  // Ensures Stop() is idempotent and thread-safe
+	stopErr           error      // Captured error from lis.Close()
 }
 
 func (g *GRPC) setupTcp() (net.Listener, error) {
@@ -38,11 +39,22 @@ func (g *GRPC) setupServices() error {
 		return fmt.Errorf("gossip handler must be set")
 	}
 
+	// Register HeartbeatService (legacy, for backward compatibility)
 	heartbeatServer := &HeartbeatServiceServer{
 		handler: g.gossipHandler,
 		nodeID:  g.nodeID,
 	}
 	gossipProtobuffer.RegisterHeartbeatServiceServer(g.srv, heartbeatServer)
+
+	// Register GossipService (3-phase gossip protocol)
+	gossipServer := &GossipServiceServer{
+		nodeID:           g.nodeID,
+		clusterID:        g.clusterID,
+		handler:          nil, // No custom handler for now - uses default empty ACK response
+		onPeerDiscovered: g.onPeerDiscovered,
+	}
+	gossipProtobuffer.RegisterGossipServiceServer(g.srv, gossipServer)
+
 	return nil
 }
 
@@ -105,7 +117,7 @@ func (g *GRPC) ServeErrors() <-chan error {
 	return g.serveErrCh
 }
 
-func NewGRPC(addr string, nodeID string, gossipHandler GossipHandler) (*GRPC, error) {
+func NewGRPC(addr string, nodeID string, clusterID string, gossipHandler GossipHandler, onPeerDiscovered PeerDiscoveryCallback) (*GRPC, error) {
 	if addr == "" || !strings.Contains(addr, ":") {
 		return nil, fmt.Errorf("invalid address: %s", addr)
 	}
@@ -114,15 +126,21 @@ func NewGRPC(addr string, nodeID string, gossipHandler GossipHandler) (*GRPC, er
 		return nil, fmt.Errorf("nodeID must be provided")
 	}
 
+	if clusterID == "" {
+		return nil, fmt.Errorf("clusterID must be provided")
+	}
+
 	if gossipHandler == nil {
 		return nil, fmt.Errorf("gossip handler must be provided")
 	}
 
 	return &GRPC{
-		addr:          addr,
-		srv:           grpc.NewServer(),
-		nodeID:        nodeID,
-		gossipHandler: gossipHandler,
-		serveErrCh:    make(chan error, 1), // Buffered channel for serve errors
+		addr:             addr,
+		srv:              grpc.NewServer(),
+		nodeID:           nodeID,
+		clusterID:        clusterID,
+		gossipHandler:    gossipHandler,
+		onPeerDiscovered: onPeerDiscovered,
+		serveErrCh:       make(chan error, 1), // Buffered channel for serve errors
 	}, nil
 }

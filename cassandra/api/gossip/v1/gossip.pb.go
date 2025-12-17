@@ -87,6 +87,7 @@ type GossipDigestSynMsg struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ClusterId     string                 `protobuf:"bytes,1,opt,name=cluster_id,json=clusterId,proto3" json:"cluster_id,omitempty"`
 	Digests       []*GossipDigest        `protobuf:"bytes,2,rep,name=digests,proto3" json:"digests,omitempty"`
+	SenderAddress string                 `protobuf:"bytes,3,opt,name=sender_address,json=senderAddress,proto3" json:"sender_address,omitempty"` // Sender's listen address for peer discovery (e.g., "127.0.0.1:50052")
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -133,6 +134,13 @@ func (x *GossipDigestSynMsg) GetDigests() []*GossipDigest {
 		return x.Digests
 	}
 	return nil
+}
+
+func (x *GossipDigestSynMsg) GetSenderAddress() string {
+	if x != nil {
+		return x.SenderAddress
+	}
+	return ""
 }
 
 // ApplicationState represents a piece of versioned application state
@@ -384,11 +392,12 @@ const file_api_gossip_v1_gossip_proto_rawDesc = "" +
 	"generation\x18\x02 \x01(\x03R\n" +
 	"generation\x12\x1f\n" +
 	"\vmax_version\x18\x03 \x01(\x03R\n" +
-	"maxVersion\"\x8e\x01\n" +
+	"maxVersion\"\xb5\x01\n" +
 	"\x12GossipDigestSynMsg\x12\x1d\n" +
 	"\n" +
 	"cluster_id\x18\x01 \x01(\tR\tclusterId\x12Y\n" +
-	"\adigests\x18\x02 \x03(\v2?.github.adamgarcia4.golearning.cassandra.gossip.v1.GossipDigestR\adigests\"T\n" +
+	"\adigests\x18\x02 \x03(\v2?.github.adamgarcia4.golearning.cassandra.gossip.v1.GossipDigestR\adigests\x12%\n" +
+	"\x0esender_address\x18\x03 \x01(\tR\rsenderAddress\"T\n" +
 	"\x10ApplicationState\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value\x12\x18\n" +

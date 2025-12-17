@@ -155,12 +155,15 @@ func handleCreateNode(m *model) actionResult {
 	return actionResult{state: m.state, lastCommand: "create"}
 }
 
-// handleSendHeartbeat sends heartbeats from all nodes
+// handleSendHeartbeat sends gossip round from all nodes
 func handleSendHeartbeat(m *model) actionResult {
 	nodes := m.manager.GetNodes()
 	for _, n := range nodes {
-		if err := n.SendHeartbeat(); err != nil {
-			return actionResult{state: m.state, err: fmt.Errorf("failed to send heartbeat from node %s: %w", string(n.GetConfig().NodeID), err)}
+		if err := n.SendGossipRound(); err != nil {
+			// Ignore "no peers connected" error - this is expected for nodes without seeds
+			if err.Error() != "no peers connected" {
+				return actionResult{state: m.state, err: fmt.Errorf("failed to send gossip from node %s: %w", string(n.GetConfig().NodeID), err)}
+			}
 		}
 	}
 	return actionResult{state: m.state}
